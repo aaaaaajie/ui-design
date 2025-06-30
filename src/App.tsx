@@ -377,44 +377,6 @@ function App() {
     messageApi.warning(`删除字段: ${record?.fieldDisplayName}`);
   };
 
-  // 获取新字段的级联选择器选项
-  const getNewFieldCascaderOptions = (fieldType: string) => {
-    switch (fieldType) {
-      case 'singleText':
-        return [
-          {
-            value: 'singleText',
-            label: '单行文本',
-            children: [
-              { value: 'varchar', label: 'varchar' },
-              { value: 'char', label: 'char' },
-            ],
-          },
-        ];
-      case 'multiText':
-        return [
-          {
-            value: 'multiText',
-            label: '多行文本',
-          },
-        ];
-      case 'integer':
-        return [
-          {
-            value: 'integer',
-            label: '整数',
-            children: [
-              { value: 'tinyInt', label: 'tinyInt' },
-              { value: 'integer', label: 'integer' },
-              { value: 'bigInt', label: 'bigInt' },
-            ],
-          },
-        ];
-      default:
-        return [];
-    }
-  };
-
   // 获取第二级数据类型选项（用于Add Field表单）
   const getDataTypeOptions = (fieldType: string) => {
     switch (fieldType) {
@@ -476,52 +438,26 @@ function App() {
     }
   };
 
+  // 获取字段类型的显示名称
+  const getFieldTypeDisplayName = (fieldType: string) => {
+    switch (fieldType) {
+      case 'singleText':
+        return '单行文本';
+      case 'multiText':
+        return '多行文本';
+      case 'integer':
+        return '整数';
+      case 'email':
+        return '邮箱';
+      default:
+        return '未知类型';
+    }
+  };
+
   // 判断字段类型是否有子类型
   const hasDataType = (fieldType: string) => {
     // 直接判断哪些类型需要显示额外的选择字段
     return fieldType === 'singleText' || fieldType === 'integer' || fieldType === 'email';
-  };
-
-  // 获取级联层级描述
-  const getCascaderLevelLabels = (fieldInterface: string[]) => {
-    if (!fieldInterface || fieldInterface.length === 0) return [];
-
-    const [firstLevel, secondLevel, thirdLevel] = fieldInterface;
-    const labels = ['Field interface'];
-
-    if (firstLevel === 'email') {
-      // 邮箱类型：第一级是Field interface，第二级是Field type，第三级是Data type
-      if (secondLevel) {
-        labels.push('Field type');
-        if (thirdLevel && secondLevel === 'string') {
-          labels.push('Data type');
-        }
-      }
-    } else if (['singleText', 'integer'].includes(firstLevel)) {
-      // 单行文本和整数：第一级是Field interface，第二级直接是Data type
-      if (secondLevel) {
-        labels.push('Data type');
-      }
-    }
-
-    return labels;
-  };
-
-  // 自定义级联显示
-  const displayRender = (labels: string[], selectedOptions: any[]) => {
-    const levelLabels = getCascaderLevelLabels(selectedOptions?.map(opt => opt.value) || []);
-    return labels.map((label, index) => {
-      const levelDesc = levelLabels[index] || '';
-      return (
-        <span key={index}>
-          {index > 0 && <span style={{ margin: '0 4px', color: '#999' }}>→</span>}
-          <span style={{ fontSize: '11px', color: '#999', marginRight: '2px' }}>
-            {levelDesc && `${levelDesc}: `}
-          </span>
-          <span>{label}</span>
-        </span>
-      );
-    });
   };
 
   // 处理添加字段类型选择
@@ -619,7 +555,6 @@ function App() {
   ];
 
   const handleFieldInterfaceEditableChange = (checked: boolean) => {
-    console.log('开关状态变更:', checked, '当前状态:', fieldInterfaceEditable); // 调试日志
     if (checked) {
       Modal.confirm({
         title: '警告',
@@ -636,17 +571,14 @@ function App() {
         okText: '确定',
         cancelText: '取消',
         onOk() {
-          console.log('用户确认启用'); // 调试日志
           setFieldInterfaceEditable(true);
           messageApi.success('字段接口编辑功能已启用');
         },
         onCancel() {
-          console.log('用户取消启用'); // 调试日志
           messageApi.info('已取消启用字段接口编辑');
         },
       });
     } else {
-      console.log('关闭编辑功能'); // 调试日志
       setFieldInterfaceEditable(false);
       messageApi.info('字段接口编辑功能已禁用');
     }
@@ -1076,7 +1008,7 @@ function App() {
 
         {/* 添加字段抽屉 */}
         <Drawer
-          title={`添加字段 - ${selectedFieldType === 'singleText' ? '单行文本' : selectedFieldType === 'multiText' ? '多行文本' : '整数'}`}
+          title={`添加字段 - ${getFieldTypeDisplayName(selectedFieldType)}`}
           width={400}
           placement="right"
           onClose={handleDrawerClose}
@@ -1124,7 +1056,7 @@ function App() {
                     options={getDataTypeOptions(selectedFieldType)}
                     placeholder="请选择字段类型"
                     expandTrigger="hover"
-                    showSearch={{ filter: (inputValue, path) => path.some(option => option.label?.toLowerCase().indexOf(inputValue.toLowerCase()) > -1) }}
+                    showSearch={{ filter: (inputValue, path) => path.some(option => option.label?.toString().toLowerCase().indexOf(inputValue.toLowerCase()) > -1) }}
                   />
                 ) : (
                   <Select
