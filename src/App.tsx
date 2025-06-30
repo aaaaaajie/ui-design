@@ -732,7 +732,7 @@ function App() {
             <strong style={{ color: '#fa8c16' }}>📋 类型切换规则：</strong>
 
             <div style={{ marginTop: '12px' }}>
-              <p style={{ margin: '8px 0', color: '#666', fontWeight: 500 }}>第一级类型切换矩阵：</p>
+              <p style={{ margin: '8px 0', color: '#666', fontWeight: 500 }}>第一级类型切换规则：</p>
               <Table
                 size="small"
                 pagination={false}
@@ -777,34 +777,34 @@ function App() {
                 ]}
                 columns={[
                   {
-                    title: '当前类型',
+                    title: 'From/To',
                     dataIndex: 'current',
                     key: 'current',
                     render: text => <span style={{ fontWeight: 500, color: '#1890ff' }}>{text}</span>
                   },
                   {
-                    title: '→ 整数',
+                    title: '整数',
                     dataIndex: 'toInteger',
                     key: 'toInteger',
                     align: 'center',
                     render: text => <span style={{ fontSize: '16px' }}>{text}</span>
                   },
                   {
-                    title: '→ 单行文本',
+                    title: '单行文本',
                     dataIndex: 'toSingleText',
                     key: 'toSingleText',
                     align: 'center',
                     render: text => <span style={{ fontSize: '16px' }}>{text}</span>
                   },
                   {
-                    title: '→ 多行文本',
+                    title: '多行文本',
                     dataIndex: 'toMultiText',
                     key: 'toMultiText',
                     align: 'center',
                     render: text => <span style={{ fontSize: '16px' }}>{text}</span>
                   },
                   {
-                    title: '→ 邮箱',
+                    title: '邮箱',
                     dataIndex: 'toEmail',
                     key: 'toEmail',
                     align: 'center',
@@ -820,7 +820,7 @@ function App() {
                 style={{ marginBottom: '16px' }}
               />
 
-              <p style={{ margin: '8px 0', color: '#666', fontWeight: 500 }}>第二级类型切换矩阵：</p>
+              <p style={{ margin: '8px 0', color: '#666', fontWeight: 500 }}>第二级类型切换规则：</p>
               <Table
                 size="small"
                 pagination={false}
@@ -906,10 +906,10 @@ function App() {
                 ]}
                 columns={[
                   {
-                    title: '分类',
+                    title: '类型',
                     dataIndex: 'category',
                     key: 'category',
-                    render: text => <span style={{ fontSize: '11px', color: '#999' }}>{text}</span>
+                    render: text => <span style={{ color: '#1890ff' }}>{text}</span>
                   },
                   {
                     title: '当前子类型',
@@ -980,29 +980,15 @@ function App() {
           </div>
 
           <div style={{ marginBottom: '16px' }}>
-            <strong style={{ color: '#1890ff' }}>🔧 字段接口编辑控制：</strong>
+            <strong style={{ color: '#1890ff' }}>🔧 Field interface编辑控制：</strong>
             <p style={{ margin: '4px 0 8px 0', color: '#666' }}>
               在 "Field interface" 列头右侧有一个编辑开关，默认为禁用状态。
             </p>
             <ul style={{ margin: '0 0 8px 20px', color: '#666' }}>
-              <li>鼠标悬停开关可查看功能说明和安全警告</li>
               <li>点击开关启用时会弹出安全警告确认框</li>
               <li>确认后表格中所有字段接口的级联选择器将变为可编辑状态</li>
               <li>关闭开关会立即禁用所有字段接口编辑功能</li>
             </ul>
-          </div>
-
-          <div>
-            <strong style={{ color: '#52c41a' }}>⚡ 操作指南：</strong>
-            <ol style={{ marginBottom: 0, color: '#666' }}>
-              <li>点击表格上方的 "Add Field" 按钮，悬浮显示字段类型选项</li>
-              <li>选择字段类型后，从右侧抽屉中填写字段信息</li>
-              <li>点击 Field interface 列头的开关启用编辑功能</li>
-              <li>手动点击各字段的级联选择器进行类型选择</li>
-              <li>观察不同选择下的可用选项变化</li>
-              <li>尝试切换 Title field 开关</li>
-              <li>点击 Actions 列的 Edit 和 Delete 按钮查看反馈</li>
-            </ol>
           </div>
         </div>
 
