@@ -622,18 +622,18 @@ function App() {
     console.log('开关状态变更:', checked, '当前状态:', fieldInterfaceEditable); // 调试日志
     if (checked) {
       Modal.confirm({
-        title: '数据库字段类型编辑警告',
+        title: '警告',
         icon: <ExclamationCircleOutlined />,
         content: (
           <div>
-            <p>启用字段接口编辑功能可能会导致以下风险：</p>
+            <p>修改字段类型可能会导致以下风险：</p>
             <ul style={{ marginTop: 8, paddingLeft: 20 }}>
-              <li>修改字段类型可能影响数据库表结构</li>
-              <li>类型修改后可能无法恢复到原始类型配置</li>
+              <li>可能同步修改数据库表结构</li>
+              <li>可能无法恢复到原始类型配置</li>
             </ul>
           </div>
         ),
-        okText: '我了解风险，继续启用',
+        okText: '确定',
         cancelText: '取消',
         onOk() {
           console.log('用户确认启用'); // 调试日志
@@ -781,7 +781,7 @@ function App() {
               border: '1px solid #d6e4ff'
             }}>
               <p style={{ margin: '0 0 8px 0', color: '#666', lineHeight: '1.6' }}>
-                Field interface 级联选择器理论上包含三个层级：
+                Field interface 级联选择器包含三个层级：
               </p>
               <ul style={{ margin: '0 0 8px 20px', color: '#666', lineHeight: '1.6' }}>
                 <li><strong>第一级：Field interface</strong> - 字段接口类型（如：整数、单行文本、多行文本、邮箱）</li>
