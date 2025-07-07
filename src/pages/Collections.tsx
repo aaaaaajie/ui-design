@@ -548,14 +548,12 @@ const Collections: React.FC = () => {
       dataIndex: 'collectionDisplayName',
       key: 'collectionDisplayName',
       width: 200,
-      sorter: (a, b) => a.collectionDisplayName.localeCompare(b.collectionDisplayName),
     },
     {
       title: 'Collection name',
       dataIndex: 'collectionName',
       key: 'collectionName',
       width: 150,
-      sorter: (a, b) => a.collectionName.localeCompare(b.collectionName),
     },
     {
       title: 'Collection template',
@@ -574,6 +572,7 @@ const Collections: React.FC = () => {
       dataIndex: 'from',
       key: 'from',
       width: 150,
+      sorter: (a, b) => a.from.localeCompare(b.from),
     },
     {
       title: 'Description',
