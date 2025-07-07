@@ -3,13 +3,88 @@
   box-sizing: border-box;
 }
 
-body {
+html, body {
   margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: #ffffff;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Transfer 组件表格样式 */
+.ant-transfer-list {
+  border: 1px solid #e8e8e8 !important;
+  border-radius: 4px !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 400px !important;
+}
+
+.ant-transfer-list-header {
+  padding: 12px 16px !important;
+  background-color: #fafafa !important;
+  border-bottom: 1px solid #e8e8e8 !important;
+  flex-shrink: 0 !important;
+}
+
+.ant-transfer-list-body {
+  padding: 0 !important;
+  overflow: hidden !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.ant-transfer-list-content {
+  padding: 0 !important;
+  overflow: hidden !important;
+  flex: 1 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.ant-transfer-list-search {
+  padding: 8px 16px !important;
+  background-color: #fff !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+  flex-shrink: 0 !important;
+}
+
+.ant-transfer-list-search .ant-input {
+  border: 1px solid #d9d9d9 !important;
+  border-radius: 4px !important;
+  padding: 6px 12px !important;
+}
+
+.ant-transfer-list-content-item {
+  padding: 0 !important;
+  border: none !important;
+}
+
+.ant-transfer-list-content-item:hover {
+  background-color: #f5f5f5 !important;
+}
+
+.ant-transfer-list-content-item-checked {
+  background-color: #e6f7ff !important;
+}
+
+/* 移除默认的选中样式 */
+.ant-transfer-list-content-item::before {
+  display: none !important;
 }
 
 /* 表格自定义样式 */
@@ -64,4 +139,104 @@ body {
 /* 消息提示样式优化 */
 .ant-message {
   z-index: 1050;
+}
+
+/* Table Transfer 专用样式 */
+.ant-transfer-list .ant-table-wrapper {
+  border: none !important;
+  height: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.ant-transfer-list .ant-table {
+  border: none !important;
+  flex: 1 !important;
+}
+
+.ant-transfer-list .ant-table-thead > tr > th {
+  background-color: #fafafa !important;
+  border-bottom: 1px solid #e8e8e8 !important;
+  font-weight: 600;
+  padding: 8px 16px !important;
+}
+
+.ant-transfer-list .ant-table-tbody > tr > td {
+  padding: 8px 16px !important;
+  border-bottom: 1px solid #f0f0f0 !important;
+}
+
+.ant-transfer-list .ant-table-tbody > tr:hover > td {
+  background-color: #f5f5f5 !important;
+}
+
+.ant-transfer-list .ant-table-tbody > tr.ant-table-row-selected > td {
+  background-color: #e6f7ff !important;
+}
+
+/* Transfer 表格分页器样式 */
+.ant-transfer-list .ant-table-pagination {
+  margin: 8px 0 0 0 !important;
+  padding: 0 16px !important;
+  justify-content: center !important;
+  border-top: 1px solid #f0f0f0 !important;
+  background-color: #fafafa !important;
+}
+
+.ant-transfer-list .ant-table-pagination .ant-pagination {
+  margin: 0 !important;
+}
+
+.ant-transfer-list .ant-table-pagination .ant-pagination-total-text {
+  color: #666 !important;
+  font-size: 12px !important;
+}
+
+/* 确保 Transfer 列表内容区域正确布局 */
+.ant-transfer-list .ant-table-container {
+  border: none !important;
+  flex: 1 !important;
+  overflow: hidden !important;
+}
+
+.ant-transfer-list .ant-table-content {
+  overflow-x: hidden !important;
+  height: 100% !important;
+}
+
+.ant-transfer-list .ant-table-body {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  max-height: 280px !important;
+}
+
+/* 抽屉内容样式 */
+.ant-drawer-body {
+  padding: 24px !important;
+}
+
+.ant-drawer-footer {
+  padding: 10px 16px !important;
+  border-top: 1px solid #e8e8e8 !important;
+}
+
+/* 针对小屏幕的响应式优化 */
+@media (max-width: 768px) {
+  .ant-transfer-list {
+    min-height: 350px !important;
+  }
+  
+  .ant-transfer-list .ant-table-body {
+    max-height: 220px !important;
+  }
+  
+  .ant-transfer-list .ant-table-thead > tr > th {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
+  
+  .ant-transfer-list .ant-table-tbody > tr > td {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+  }
 }
