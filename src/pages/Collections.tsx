@@ -60,21 +60,9 @@ const TableTransfer: React.FC<TableTransferProps> = ({ leftColumns, rightColumns
           style={{ 
             pointerEvents: listDisabled ? 'none' : undefined,
           }}
-          pagination={{
-            pageSize: direction === 'left' ? 10 : 8,
-            size: 'small',
-            showSizeChanger: direction === 'left',
-            showQuickJumper: direction === 'left',
-            showTotal: (total, range) => `${range[0]}-${range[1]} / ${total}`,
-            pageSizeOptions: ['10', '20', '50'],
-            hideOnSinglePage: false, // 强制显示分页，即使只有一页
-            style: { 
-              margin: '8px 0 0 0',
-              textAlign: 'center',
-            }
-          }}
+          pagination={false} // 禁用Table分页，使用Transfer的分页
           scroll={{ 
-            y: 320 // 减少滚动区域高度，为分页器留出空间
+            y: 350 // 增加表格高度，因为不需要为分页预留空间
           }}
           onRow={({ key, disabled: itemDisabled }) => ({
             onClick: () => {
@@ -761,19 +749,13 @@ const Collections: React.FC = () => {
           onChange={handleTransferChange}
           onSearch={handleSearch}
           filterOption={(inputValue, option) => {
-            // 自定义过滤函数，确保所有字段都有值且不会报错
+            // 只根据 collection name 或 collection display name 搜索
             const searchValue = inputValue.toLowerCase();
             const displayName = option.collectionDisplayName ? option.collectionDisplayName.toLowerCase() : '';
             const name = option.collectionName ? option.collectionName.toLowerCase() : '';
-            const description = option.description ? option.description.toLowerCase() : '';
-            const from = option.from ? option.from.toLowerCase() : '';
-            const tag = option.tag ? option.tag.toLowerCase() : '';
             
             return displayName.includes(searchValue) || 
-                   name.includes(searchValue) || 
-                   description.includes(searchValue) ||
-                   from.includes(searchValue) ||
-                   tag.includes(searchValue);
+                   name.includes(searchValue);
           }}
           titles={[
             `Available Collections (${transferData.filter(item => !targetKeys.includes(item.key)).length} 项)`,
@@ -789,7 +771,9 @@ const Collections: React.FC = () => {
             width: '48%',
             height: '450px',
             border: '1px solid #e8e8e8',
-            borderRadius: '4px'
+            borderRadius: '4px',
+            position: 'relative',
+            paddingBottom: '50px' // 为分页器预留底部空间
           }}
         />
       </Drawer>
