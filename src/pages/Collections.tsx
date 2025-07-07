@@ -780,7 +780,6 @@ const Collections: React.FC = () => {
 
       {/* Loading 模态框 */}
       <Modal
-        title="数据加载中"
         open={loadingVisible}
         closable={false}
         footer={null}
