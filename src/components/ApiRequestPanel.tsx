@@ -34,6 +34,18 @@ interface QueryParam {
 // 新增：字段来源类型
 type PaginationSourceKey = 'currentPage' | 'pageSize' | 'total' | 'totalPages';
 
+// 供外部保存/设置的请求面板配置类型
+export interface RequestPanelConfig {
+  method: string;
+  url: string;
+  headers: Header[];
+  queryParams: QueryParam[];
+  body: string;
+  bodyType: string;
+  transformer: string;
+  paginationMapping: PaginationMapping;
+}
+
 interface PaginationMapping {
   // 请求侧字段名（写入 params/body 用）
   currentPage: string;
@@ -83,9 +95,11 @@ interface ApiRequestPanelProps {
     total: number;
     totalPages?: number;
   };
+  // 新增：用于预置一份配置（模版/数据源载入）
+  initialConfig?: Partial<RequestPanelConfig>;
 }
 
-const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onPaginationChange, onVariableCreate, currentPagination }, ref) => {
+const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onPaginationChange, onVariableCreate, currentPagination, initialConfig }, ref) => {
   const [method, setMethod] = useState<string>('GET');
   const [url, setUrl] = useState<string>('http://localhost:3005/api/users');
   const [headers, setHeaders] = useState<Header[]>([
@@ -126,6 +140,19 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     }
   });
   
+  // 当传入 initialConfig 时，预填充请求配置
+  useEffect(() => {
+    if (!initialConfig) return;
+    if (initialConfig.method) setMethod(initialConfig.method);
+    if (initialConfig.url) setUrl(initialConfig.url);
+    if (initialConfig.headers) setHeaders(initialConfig.headers);
+    if (initialConfig.queryParams) setQueryParams(initialConfig.queryParams);
+    if (typeof initialConfig.body === 'string') setBody(initialConfig.body);
+    if (initialConfig.bodyType) setBodyType(initialConfig.bodyType);
+    if (typeof initialConfig.transformer === 'string') setTransformer(initialConfig.transformer);
+    if (initialConfig.paginationMapping) setPaginationMapping(initialConfig.paginationMapping);
+  }, [initialConfig]);
+
   // 内置分页变量
   const getBuiltInVariables = (): Variable[] => {
     const pagination = currentPagination || { current: 1, pageSize: 10, total: 0, totalPages: 0 };
@@ -291,6 +318,28 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     },
     addVariable: (variableData: Omit<Variable, 'key'>) => {
       addVariable(variableData);
+    },
+    // 新增：获取当前完整配置
+    getCurrentConfig: (): RequestPanelConfig => ({
+      method,
+      url,
+      headers,
+      queryParams,
+      body,
+      bodyType,
+      transformer,
+      paginationMapping,
+    }),
+    // 新增：设置配置（便于外部注入模板）
+    setConfig: (cfg: Partial<RequestPanelConfig>) => {
+      if (cfg.method) setMethod(cfg.method);
+      if (cfg.url) setUrl(cfg.url);
+      if (cfg.headers) setHeaders(cfg.headers);
+      if (cfg.queryParams) setQueryParams(cfg.queryParams);
+      if (typeof cfg.body === 'string') setBody(cfg.body);
+      if (cfg.bodyType) setBodyType(cfg.bodyType);
+      if (typeof cfg.transformer === 'string') setTransformer(cfg.transformer);
+      if (cfg.paginationMapping) setPaginationMapping(cfg.paginationMapping);
     }
   }));
 
