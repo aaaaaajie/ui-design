@@ -4,6 +4,8 @@ import { PlusOutlined, DownOutlined, SaveOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import ApiRequestPanel from './ApiRequestPanel';
 import ApiResponsePanel from './ApiResponsePanel';
+// 新增：类型导入，便于在 Block 中声明 initialConfig 类型
+import type { RequestPanelConfig } from './ApiRequestPanel';
 
 const { Content } = Layout;
 
@@ -29,6 +31,8 @@ interface Block {
     currentPagination?: { current: number; pageSize: number; total: number; totalPages?: number };
     // 新增：是否仅展示 UI（不显示请求/响应配置）
     displayOnly?: boolean;
+    // 新增：从数据源/模板注入的初始配置
+    initialConfig?: Partial<RequestPanelConfig>;
 }
 
 // 新增：数据源与模版类型
@@ -130,18 +134,20 @@ const App: React.FC = () => {
             currentPagination: { current: 1, pageSize: 10, total: 0, totalPages: 0 },
             // 选择数据源直接进入仅展示模式
             displayOnly: true,
+            // 注入初始配置，避免在状态未就绪时用默认 URL 请求
+            initialConfig: ds.config as Partial<RequestPanelConfig>,
         };
         setBlocks(prev => [...prev, newBlock]);
-        // 延迟注入配置并触发一次请求（等待隐藏面板挂载）
-        setTimeout(() => {
-            const ref = newBlock.requestPanelRef?.current;
-            if (ref?.setConfig) {
-                ref.setConfig(ds.config);
-            }
-            if (ref?.triggerRequest) {
-                ref.triggerRequest();
-            }
-        }, 0);
+        // 取消立即触发请求，交由子组件在分页 effect 中自动触发，确保 initialConfig 先应用
+        // setTimeout(() => {
+        //     const ref = newBlock.requestPanelRef?.current;
+        //     if (ref?.setConfig) {
+        //         ref.setConfig(ds.config);
+        //     }
+        //     if (ref?.triggerRequest) {
+        //         ref.triggerRequest();
+        //     }
+        // }, 0);
     };
 
     // 菜单：合并默认与数据源
@@ -269,6 +275,8 @@ const App: React.FC = () => {
                                         blockId={block.id}
                                         onResponse={(response) => handleResponse(block.id, response)}
                                         currentPagination={block.currentPagination}
+                                        // 新增：传入初始配置，确保用数据源配置请求
+                                        initialConfig={block.initialConfig}
                                     />
                                     {block.response && (
                                         <ApiResponsePanel
@@ -296,6 +304,8 @@ const App: React.FC = () => {
                                             onResponse={(response) => handleResponse(block.id, response)}
                                             // 将 UI 的分页状态传给请求面板
                                             currentPagination={block.currentPagination}
+                                            // 兼容：非 displayOnly 场景也可传入初始配置（如后续扩展需要）
+                                            initialConfig={block.initialConfig}
                                         />
                                         {block.response && (
                                             <div style={{ marginTop: '24px' }}>

@@ -12,6 +12,7 @@ import {
 } from 'antd';
 import { PlusOutlined, DeleteOutlined, PlayCircleOutlined } from '@ant-design/icons';
 import axios from 'axios';
+import { useRef } from 'react';
 
 const { Option } = Select;
 const { TextArea } = Input;
@@ -139,19 +140,44 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       totalPages: 'totalPages',
     }
   });
+  // 新增：用于在应用 initialConfig 后自动触发一次请求
+  const [shouldAutoRun, setShouldAutoRun] = useState(false);
+  // 新增：只有在应用完 initialConfig 后才允许分页联动触发请求，避免首次命中默认 users
+  const [hasAppliedInitialConfig, setHasAppliedInitialConfig] = useState<boolean>(() => !initialConfig);
+  // 记录上一次的分页，用于判断是否真的变化，避免初次渲染或非分页变更导致的重复请求
+  const prevPaginationRef = useRef<{ current: number; pageSize: number } | null>(null);
   
   // 当传入 initialConfig 时，预填充请求配置
   useEffect(() => {
-    if (!initialConfig) return;
-    if (initialConfig.method) setMethod(initialConfig.method);
-    if (initialConfig.url) setUrl(initialConfig.url);
-    if (initialConfig.headers) setHeaders(initialConfig.headers);
-    if (initialConfig.queryParams) setQueryParams(initialConfig.queryParams);
-    if (typeof initialConfig.body === 'string') setBody(initialConfig.body);
-    if (initialConfig.bodyType) setBodyType(initialConfig.bodyType);
-    if (typeof initialConfig.transformer === 'string') setTransformer(initialConfig.transformer);
-    if (initialConfig.paginationMapping) setPaginationMapping(initialConfig.paginationMapping);
+    if (initialConfig) {
+      if (initialConfig.method) setMethod(initialConfig.method);
+      if (initialConfig.url) setUrl(initialConfig.url);
+      if (initialConfig.headers) setHeaders(initialConfig.headers);
+      if (initialConfig.queryParams) setQueryParams(initialConfig.queryParams);
+      if (typeof initialConfig.body === 'string') setBody(initialConfig.body);
+      if (initialConfig.bodyType) setBodyType(initialConfig.bodyType);
+      if (typeof initialConfig.transformer === 'string') setTransformer(initialConfig.transformer);
+      if (initialConfig.paginationMapping) setPaginationMapping(initialConfig.paginationMapping);
+      // 标记：下一次状态稳定后自动运行一次
+      setShouldAutoRun(true);
+      setHasAppliedInitialConfig(true);
+    } else {
+      // 没有初始配置也视为已就绪
+      setHasAppliedInitialConfig(true);
+    }
   }, [initialConfig]);
+
+  // 在配置应用完成后，自动触发请求一次，避免使用默认 users URL
+  useEffect(() => {
+    if (!shouldAutoRun) return;
+    if (!url || !url.trim()) return;
+    // 触发一次请求后清除标记
+    const timer = setTimeout(() => {
+      handleRequest();
+      setShouldAutoRun(false);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [shouldAutoRun, url, method, headers, queryParams, body, bodyType, transformer, paginationMapping]);
 
   // 内置分页变量
   const getBuiltInVariables = (): Variable[] => {
@@ -269,20 +295,42 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
 
   // 监听分页变化，自动更新参数并执行请求
   useEffect(() => {
-    if (currentPagination && url.trim()) {
-      if (paginationMapping.enabledFields.currentPage || paginationMapping.enabledFields.pageSize) {
-        const pagination = { 
-          current: currentPagination.current, 
-          pageSize: currentPagination.pageSize 
-        };
-        updatePaginationParams(pagination);
-        const timer = setTimeout(() => {
-          handleRequest();
-        }, 100);
-        return () => clearTimeout(timer);
+    // 仅在完成初始配置应用后，且不处于自动运行阶段时触发
+    if (!hasAppliedInitialConfig || shouldAutoRun) return;
+    if (!url.trim()) return;
+
+    // 若首次进入，记录当前分页但不触发请求，避免与 shouldAutoRun 的一次请求重复
+    if (prevPaginationRef.current === null) {
+      if (currentPagination) {
+        prevPaginationRef.current = { current: currentPagination.current, pageSize: currentPagination.pageSize };
       }
+      return;
     }
-  }, [currentPagination?.current, currentPagination?.pageSize]);
+
+    // 检测分页是否真的发生变化
+    const prev = prevPaginationRef.current;
+    const curr = currentPagination;
+    const changed = !!curr && (!!prev ? (prev.current !== curr.current || prev.pageSize !== curr.pageSize) : true);
+
+    if (!changed) return;
+
+    // 更新记录
+    if (curr) {
+      prevPaginationRef.current = { current: curr.current, pageSize: curr.pageSize };
+    }
+
+    if (currentPagination && (paginationMapping.enabledFields.currentPage || paginationMapping.enabledFields.pageSize)) {
+      const pagination = { 
+        current: currentPagination.current, 
+        pageSize: currentPagination.pageSize 
+      };
+      updatePaginationParams(pagination);
+      const timer = setTimeout(() => {
+        handleRequest();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [currentPagination?.current, currentPagination?.pageSize, hasAppliedInitialConfig, shouldAutoRun, url, paginationMapping.enabledFields.currentPage, paginationMapping.enabledFields.pageSize]);
 
   // 添加变量
   const addVariable = (variableData: Omit<Variable, 'key'>) => {
