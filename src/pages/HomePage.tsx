@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, Space, Button, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import { TableOutlined, SettingOutlined } from '@ant-design/icons';
+import { TableOutlined, SettingOutlined, ApiOutlined } from '@ant-design/icons';
 
 const { Title, Paragraph } = Typography;
 
@@ -67,6 +67,34 @@ const HomePage: React.FC = () => {
               block
             >
               进入 Field Interface 页面
+            </Button>
+          </div>
+        </Card>
+
+        <Card 
+          hoverable
+          style={{ width: '100%' }}
+          cover={
+            <div style={{ 
+              padding: '40px', 
+              textAlign: 'center', 
+              background: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' 
+            }}>
+              <ApiOutlined style={{ fontSize: '48px', color: 'white' }} />
+            </div>
+          }
+        >
+          <Card.Meta 
+            title="API Tester" 
+            description="API 接口测试工具，支持发送 HTTP 请求、查看响应、数据转换和 UI 展示"
+          />
+          <div style={{ marginTop: '16px' }}>
+            <Button 
+              type="primary" 
+              onClick={() => navigate('/api-tester')}
+              block
+            >
+              进入 API 测试工具
             </Button>
           </div>
         </Card>
