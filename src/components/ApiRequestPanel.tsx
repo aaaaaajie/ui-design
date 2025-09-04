@@ -54,6 +54,8 @@ interface PaginationMapping {
   total: string;
   totalPages: string;
   location: 'params' | 'body';
+  // 新增：分页模式（noco = 前端分页, api = 接口分页）
+  pagingMode?: 'noco' | 'api';
   enabledFields: {
     currentPage: boolean;
     pageSize: boolean;
@@ -120,6 +122,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     total: 'total',
     totalPages: 'totalPages',
     location: 'params',
+    // 默认：接口分页
+    pagingMode: 'api',
     enabledFields: {
       currentPage: true,
       pageSize: true,
@@ -232,6 +236,10 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
 
   // 内部方法：更新分页参数（写入 params 或 body）
   const updatePaginationParams = (_pagination: { current: number; pageSize: number }) => {
+    // 如果是 NocoBase 分页，不写入请求参数
+    if (paginationMapping.pagingMode === 'noco') {
+      return;
+    }
     // 仅当有需要同步的字段时执行
     if (!paginationMapping.enabledFields.currentPage && !paginationMapping.enabledFields.pageSize) {
       return;
@@ -298,6 +306,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     // 仅在完成初始配置应用后，且不处于自动运行阶段时触发
     if (!hasAppliedInitialConfig || shouldAutoRun) return;
     if (!url.trim()) return;
+    // NocoBase 分页：不因分页变化而触发请求
+    if (paginationMapping.pagingMode === 'noco') return;
 
     // 若首次进入，记录当前分页但不触发请求，避免与 shouldAutoRun 的一次请求重复
     if (prevPaginationRef.current === null) {
@@ -330,7 +340,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [currentPagination?.current, currentPagination?.pageSize, hasAppliedInitialConfig, shouldAutoRun, url, paginationMapping.enabledFields.currentPage, paginationMapping.enabledFields.pageSize]);
+  }, [currentPagination?.current, currentPagination?.pageSize, hasAppliedInitialConfig, shouldAutoRun, url, paginationMapping.enabledFields.currentPage, paginationMapping.enabledFields.pageSize, paginationMapping.pagingMode]);
 
   // 添加变量
   const addVariable = (variableData: Omit<Variable, 'key'>) => {
@@ -799,132 +809,132 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       label: 'Pagination',
       children: (
         <div>
-          <div style={{ marginBottom: '12px' }}>
-            <Text type="secondary">为请求端分页建立映射：左侧填写请求需要的参数名，右侧选择绑定的系统内置变量。</Text>
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <Text strong>参数写入位置:</Text>
+          {/* 分页模式切换 */}
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>分页模式:</Text>
             <Select
-              value={paginationMapping.location}
-              onChange={(value) => updatePaginationMapping('location', value)}
-              style={{ width: 140, marginLeft: 8 }}
               size="small"
+              style={{ width: 200, marginLeft: 8 }}
+              value={paginationMapping.pagingMode || 'api'}
+              onChange={(v) => updatePaginationMapping('pagingMode', v)}
             >
-              <Option value="params">Query Params</Option>
-              <Option value="body">Request Body</Option>
+              <Option value="noco">使用 NocoBase 分页</Option>
+              <Option value="api">使用 API 分页</Option>
             </Select>
           </div>
 
-          {
-            // 请求映射表
-          }
-          <Table
-            size="small"
-            pagination={false}
-            rowKey={(record: any) => record.key}
-            columns={[
-              {
-                title: '请求参数名',
-                dataIndex: 'param',
-                render: (_: any, record: any) => (
-                  <Input
-                    placeholder={record.placeholder}
-                    value={(paginationMapping as any)[record.mappingKey]}
-                    onChange={(e) => updatePaginationField(record.mappingKey as keyof PaginationMapping['enabledFields'], true, e.target.value)}
-                    size="small"
-                  />
-                ),
-              },
-              {
-                title: '绑定内置变量',
-                dataIndex: 'source',
-                render: (_: any, record: any) => {
-                  const vars = getBuiltInVariables();
-                  return (
-                    <Select
-                      size="small"
-                      style={{ width: '100%' }}
-                      value={(paginationMapping.valueSources as any)[record.mappingKey]}
-                      onChange={(val: PaginationSourceKey) => updatePaginationValueSource(record.mappingKey as keyof PaginationMapping['valueSources'], val)}
-                      options={vars.map(v => ({
-                        label: `${v.name}`,
-                        value: v.name as PaginationSourceKey,
-                      }))}
-                    />
-                  );
-                },
-              },
-            ]}
-            dataSource={[
-              { key: 'currentPage', label: '当前页', mappingKey: 'currentPage', placeholder: '如 page' },
-              { key: 'pageSize', label: '条数', mappingKey: 'pageSize', placeholder: '如 limit 或 pageSize' },
-            ]}
-          />
+          { (paginationMapping.pagingMode || 'api') === 'api' ? (
+            <>
+              <div style={{ marginBottom: '16px' }}>
+                <Text strong>参数写入位置:</Text>
+                <Select
+                  value={paginationMapping.location}
+                  onChange={(value) => updatePaginationMapping('location', value)}
+                  style={{ width: 140, marginLeft: 8 }}
+                  size="small"
+                >
+                  <Option value="params">Query Params</Option>
+                  <Option value="body">Request Body</Option>
+                </Select>
+              </div>
 
-          <div style={{ background: '#f5f5f5', padding: 8, borderRadius: 4, marginTop: 16 }}>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              当右侧表格分页变化时（页码/条数），会根据上面的映射自动写入到 {paginationMapping.location === 'params' ? 'Query Params' : 'Request Body'}。
-              例如：如果条数字段名填为 <code>limit</code> 且绑定到内置 <code>pageSize</code>，切换每页条数时会自动设置 <code>limit</code>。
-            </Text>
-          </div>
+              {/* 请求映射表 */}
+              <Table
+                size="small"
+                pagination={false}
+                rowKey={(record: any) => record.key}
+                columns={[
+                  {
+                    title: '请求参数名',
+                    dataIndex: 'param',
+                    render: (_: any, record: any) => (
+                      <Input
+                        placeholder={record.placeholder}
+                        value={(paginationMapping as any)[record.mappingKey]}
+                        onChange={(e) => updatePaginationField(record.mappingKey as keyof PaginationMapping['enabledFields'], true, e.target.value)}
+                        size="small"
+                      />
+                    ),
+                  },
+                  {
+                    title: '绑定内置变量',
+                    dataIndex: 'source',
+                    render: (_: any, record: any) => {
+                      const vars = getBuiltInVariables();
+                      return (
+                        <Select
+                          size="small"
+                          style={{ width: '100%' }}
+                          value={(paginationMapping.valueSources as any)[record.mappingKey]}
+                          onChange={(val: PaginationSourceKey) => updatePaginationValueSource(record.mappingKey as keyof PaginationMapping['valueSources'], val)}
+                          options={vars.map(v => ({
+                            label: `${v.name}`,
+                            value: v.name as PaginationSourceKey,
+                          }))}
+                        />
+                      );
+                    },
+                  },
+                ]}
+                dataSource={[
+                  { key: 'currentPage', label: '当前页', mappingKey: 'currentPage', placeholder: '如 page' },
+                  { key: 'pageSize', label: '条数', mappingKey: 'pageSize', placeholder: '如 limit 或 pageSize' },
+                ]}
+              />
 
-          <div style={{ marginTop: 24, marginBottom: 8 }}>
-            <Text strong>响应数据映射到分页变量</Text>
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                从响应数据中提取分页信息。填写路径相对于 <code>response.data</code>，例如 <code>totalCount</code>、<code>result.page.current</code>。
-                也可输入 <code>data.totalCount</code> 或 <code>response.data.totalCount</code>，系统会自动规范化。
-              </Text>
+              {/* 响应映射表 */}
+              <Table
+                size="small"
+                pagination={false}
+                rowKey={(record: any) => `resp-${record.key}`}
+                columns={[
+                  {
+                    title: '响应数据路径 (相对 response.data)',
+                    dataIndex: 'respPath',
+                    render: (_: any, record: any) => (
+                      <Input
+                        placeholder={record.placeholder}
+                        value={(paginationMapping.responseFields as any)[record.mappingKey]}
+                        onChange={(e) => updatePaginationResponseField(record.mappingKey as keyof PaginationMapping['responseFields'], e.target.value)}
+                        size="small"
+                      />
+                    ),
+                  },
+                  {
+                    title: '绑定内置变量',
+                    dataIndex: 'bind',
+                    render: (_: any, record: any) => (
+                      <Select
+                        size="small"
+                        style={{ width: '100%' }}
+                        value={record.mappingKey}
+                        disabled
+                        options={[
+                          { label: 'currentPage', value: 'currentPage' },
+                          { label: 'pageSize', value: 'pageSize' },
+                          { label: 'total', value: 'total' },
+                          { label: 'totalPages', value: 'totalPages' },
+                        ]}
+                      />
+                    ),
+                  },
+                ]}
+                dataSource={[
+                  { key: 'total', label: '总条数', mappingKey: 'total', placeholder: '如 totalCount 或 meta.total' },
+                  { key: 'currentPage', label: '当前页', mappingKey: 'currentPage', placeholder: '如 currentPage 或 page.current' },
+                  { key: 'pageSize', label: '每页条数', mappingKey: 'pageSize', placeholder: '如 pageSize 或 page.size' },
+                  { key: 'totalPages', label: '总页数(可选)', mappingKey: 'totalPages', placeholder: '如 totalPages' },
+                ]}
+              />
+            </>
+          ) : (
+            <div style={{ background: '#fffbe6', padding: 12, border: '1px solid #ffe58f', borderRadius: 4 }}>
+              <Text>已启用「使用 NocoBase 分页」：
+                1) 不再向请求写入分页参数；
+                2) 忽略响应中的分页字段；
+                3) 表格分页将基于数据量在前端计算。</Text>
             </div>
-          </div>
-
-          {
-            // 响应映射表
-          }
-          <Table
-            size="small"
-            pagination={false}
-            rowKey={(record: any) => `resp-${record.key}`}
-            columns={[
-              {
-                title: '响应数据路径 (相对 response.data)',
-                dataIndex: 'respPath',
-                render: (_: any, record: any) => (
-                  <Input
-                    placeholder={record.placeholder}
-                    value={(paginationMapping.responseFields as any)[record.mappingKey]}
-                    onChange={(e) => updatePaginationResponseField(record.mappingKey as keyof PaginationMapping['responseFields'], e.target.value)}
-                    size="small"
-                  />
-                ),
-              },
-              {
-                title: '绑定内置变量',
-                dataIndex: 'bind',
-                render: (_: any, record: any) => (
-                  <Select
-                    size="small"
-                    style={{ width: '100%' }}
-                    value={record.mappingKey}
-                    disabled
-                    options={[
-                      { label: 'currentPage', value: 'currentPage' },
-                      { label: 'pageSize', value: 'pageSize' },
-                      { label: 'total', value: 'total' },
-                      { label: 'totalPages', value: 'totalPages' },
-                    ]}
-                  />
-                ),
-              },
-            ]}
-            dataSource={[
-              { key: 'total', label: '总条数', mappingKey: 'total', placeholder: '如 totalCount 或 meta.total' },
-              { key: 'currentPage', label: '当前页', mappingKey: 'currentPage', placeholder: '如 currentPage 或 page.current' },
-              { key: 'pageSize', label: '每页条数', mappingKey: 'pageSize', placeholder: '如 pageSize 或 page.size' },
-              { key: 'totalPages', label: '总页数(可选)', mappingKey: 'totalPages', placeholder: '如 totalPages' },
-            ]}
-          />
+          )}
         </div>
       ),
     },
@@ -933,13 +943,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       label: 'Variables',
       children: (
         <div>
-          <div style={{ marginBottom: '16px' }}>
-            <Text type="secondary">Built-in pagination variables and custom variables</Text>
-          </div>
           <div style={{ marginBottom: '24px' }}>
-            <Title level={5} style={{ fontSize: '14px', marginBottom: '12px', color: '#1890ff' }}>
-              Built-in Pagination Variables
-            </Title>
             <Table
               columns={[
                 {
@@ -947,13 +951,6 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                   dataIndex: 'name',
                   render: (name: string) => (
                     <Text strong style={{ color: '#1890ff' }}>{name}</Text>
-                  ),
-                },
-                {
-                  title: 'Value',
-                  dataIndex: 'value',
-                  render: (value: string) => (
-                    <Text code>{value}</Text>
                   ),
                 },
                 {

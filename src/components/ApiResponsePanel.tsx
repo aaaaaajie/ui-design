@@ -76,6 +76,19 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     if (!response || response.error) return;
 
     const mapping = response.paginationMapping || {};
+    const pagingMode: 'noco' | 'api' = mapping.pagingMode || 'api';
+
+    // NocoBase 分页：忽略响应中的分页字段，用数据长度做 total
+    if (pagingMode === 'noco') {
+      const dataToUse = (response.transformedData !== undefined ? response.transformedData : response.data);
+      let total = 0;
+      if (Array.isArray(dataToUse)) total = dataToUse.length;
+      else if (dataToUse && typeof dataToUse === 'object') total = 1; // 对象视作单条
+      const newPagination = { ...pagination, total };
+      setPagination(newPagination);
+      return;
+    }
+
     const respFields = mapping.responseFields || {};
     const data = response.data;
 
@@ -83,6 +96,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
 
     const newPagination = { ...pagination };
 
+    // 原有 API 分页逻辑
     // 提取当前页
     if (respFields.currentPage) {
       const currentPath = normalizeResponsePath(respFields.currentPage);
@@ -145,6 +159,9 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
 
   // 处理分页变化
   const handleTablePaginationChange = (page: number, pageSize: number) => {
+    const mapping = response?.paginationMapping || {};
+    const pagingMode: 'noco' | 'api' = mapping.pagingMode || 'api';
+
     const newPagination = { ...pagination, current: page, pageSize };
     setPagination(newPagination);
 
@@ -152,12 +169,13 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
       onPaginationChange({ current: page, pageSize });
     }
 
-    // 自动触发 API 请求（如果父层提供该回调）
-    if (onTriggerRequest) {
-      // 使用 setTimeout 确保参数更新后再触发请求
-      setTimeout(() => {
-        onTriggerRequest();
-      }, 100);
+    if (pagingMode === 'api') {
+      // API 分页才触发请求
+      if (onTriggerRequest) {
+        setTimeout(() => {
+          onTriggerRequest();
+        }, 100);
+      }
     }
   };
 
