@@ -4,7 +4,6 @@ import {
   Card,
   Tabs,
   Button,
-  Dropdown,
   Table,
   Descriptions,
   Form,
@@ -13,14 +12,36 @@ import {
   Tag,
   Divider,
   Alert,
-  Select
+  Select,
+  Popover
 } from 'antd';
-import { DownOutlined, TableOutlined, FileTextOutlined, FormOutlined } from '@ant-design/icons';
-import type { MenuProps } from 'antd';
+import { TableOutlined, FileTextOutlined, FormOutlined, FilterOutlined } from '@ant-design/icons';
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
 const { Option } = Select;
+
+// 新增：筛选条件类型声明
+export type FilterOperator =
+  | 'equals'
+  | 'notEquals'
+  | 'contains'
+  | 'notContains'
+  | 'startsWith'
+  | 'endsWith'
+  | 'gt'
+  | 'gte'
+  | 'lt'
+  | 'lte'
+  | 'isEmpty'
+  | 'isNotEmpty';
+
+export interface Condition {
+  id: string;
+  field: string;
+  operator: FilterOperator;
+  value: string; // 空值类操作符不使用该值
+}
 
 interface ResponseData {
   status?: number;
@@ -56,6 +77,16 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     total: 0,
     showSizeChanger: true,
   });
+  // 新增：显示模式，默认 table
+  const [displayMode, setDisplayMode] = useState<'table' | 'detail' | 'form'>('table');
+  
+  // 新增：处理显示模式切换
+  const handleDisplayMode = (mode: 'table' | 'detail' | 'form') => {
+    setDisplayMode(mode);
+    if (!response || response.error || !onDisplayUI) return;
+    const dataToUse = response.transformedData !== undefined ? response.transformedData : response.data;
+    onDisplayUI(renderByMode(mode, dataToUse));
+  };
 
   // 规范化响应路径，支持输入 response.data.xxx 或 data.xxx，统一为相对 data 的路径
   const normalizeResponsePath = (path?: string): string => {
@@ -69,7 +100,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
   const toNumber = (val: any, fallback: number): number => {
     const n = Number(val);
     return Number.isFinite(n) ? n : fallback;
-  };
+    };
 
   // 从响应数据中提取分页信息（支持自定义响应字段路径）
   const extractPaginationFromResponse = (response: ResponseData) => {
@@ -147,7 +178,6 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
         }
       }
     }
-    console.log(newPagination, '456');
     setPagination(newPagination);
   };
 
@@ -170,7 +200,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     }
 
     if (pagingMode === 'api') {
-      // API 分页才触发请求
+      // API 分页才触发请求（Noco 模式通过外层 pagination 变更联动请求）
       if (onTriggerRequest) {
         setTimeout(() => {
           onTriggerRequest();
@@ -190,28 +220,8 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
   React.useEffect(() => {
     if (!response || response.error || !onDisplayUI) return;
     const dataToUse = response.transformedData !== undefined ? response.transformedData : response.data;
-    console.log(response, '123');
-    onDisplayUI(
-      <Table
-        columns={generateTableColumns(dataToUse)}
-        dataSource={convertToTableData(dataToUse)}
-        pagination={{
-          current: pagination.current,
-          pageSize: pagination.pageSize,
-          pageSizeOptions: [5, 10, 20, 50, 100],
-          total: pagination.total,
-          showSizeChanger: pagination.showSizeChanger,
-          showQuickJumper: true,
-          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-          onChange: handleTablePaginationChange,
-          onShowSizeChange: handleTablePaginationChange,
-        }}
-        scroll={{ x: true }}
-        size="small"
-      />
-    );
-    // 仅在 response 或分页值变化时更新显示
-  }, [response, pagination.current, pagination.pageSize]);
+    onDisplayUI(renderByMode(displayMode, dataToUse));
+  }, [response, pagination.current, pagination.pageSize, displayMode]);
 
   // 生成数据字段schema
   const generateSchema = (data: any, prefix: string = ''): Array<{ key: string; field: string; type: string; value: any; path: string }> => {
@@ -261,67 +271,210 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     }
   };
 
-  // 显示模式下拉菜单
-  const displayMenuItems: MenuProps['items'] = [
-    {
-      key: 'table',
-      label: 'Table',
-      icon: <TableOutlined />,
-      onClick: () => handleDisplayMode('table'),
-    },
-    {
-      key: 'detail',
-      label: 'Detail',
-      icon: <FileTextOutlined />,
-      onClick: () => handleDisplayMode('detail'),
-    },
-    {
-      key: 'form',
-      label: 'Form',
-      icon: <FormOutlined />,
-      onClick: () => handleDisplayMode('form'),
-    },
-  ];
+  // ==== 与筛选相关的通用工具函数（供子组件复用） ====
+  function getFieldsFromData(data: any): string[] {
+    if (!data) return [];
+    const sample = Array.isArray(data) ? data[0] : data;
+    if (sample && typeof sample === 'object') return Object.keys(sample);
+    return ['value'];
+  }
 
-  // 处理显示模式选择
-  const handleDisplayMode = (mode: 'table' | 'detail' | 'form') => {
-    if (!response || response.error) return;
+  function coerceForCompare(a: any, b: string): { a: any; b: any } {
+    const bn = Number(b);
+    if (b !== '' && !Number.isNaN(bn)) {
+      const an = Number(a);
+      if (!Number.isNaN(an)) return { a: an, b: bn };
+    }
+    return { a: String(a ?? ''), b: b };
+  }
 
-    const dataToUse = response.transformedData !== undefined ? response.transformedData : response.data;
-    let component: React.ReactNode = null;
+  function applyConditionsToItem(item: any, conds: Condition[], logic: 'all' | 'any'): boolean {
+    if (!conds.length) return true;
+    const results = conds.map(c => {
+      const field = c.field ?? '';
+      const op = c.operator ?? 'contains';
+      const rawVal = c.value ?? '';
+      const val = Array.isArray(item) ? item[0] : item;
+      const left = (val && typeof val === 'object') ? (val as any)[field] : val;
 
-    switch (mode) {
-      case 'table':
-        component = (
+      switch (op) {
+        case 'equals': {
+          const { a, b } = coerceForCompare(left, rawVal);
+          return a === b;
+        }
+        case 'notEquals': {
+          const { a, b } = coerceForCompare(left, rawVal);
+          return a !== b;
+        }
+        case 'contains': {
+          return String(left ?? '').toLowerCase().includes(String(rawVal).toLowerCase());
+        }
+        case 'notContains': {
+          return !String(left ?? '').toLowerCase().includes(String(rawVal).toLowerCase());
+        }
+        case 'startsWith': {
+          return String(left ?? '').toLowerCase().startsWith(String(rawVal).toLowerCase());
+        }
+        case 'endsWith': {
+          return String(left ?? '').toLowerCase().endsWith(String(rawVal).toLowerCase());
+        }
+        case 'gt': {
+          const { a, b } = coerceForCompare(left, rawVal);
+          return a > b;
+        }
+        case 'gte': {
+          const { a, b } = coerceForCompare(left, rawVal);
+          return a >= b;
+        }
+        case 'lt': {
+          const { a, b } = coerceForCompare(left, rawVal);
+          return a < b;
+        }
+        case 'lte': {
+          const { a, b } = coerceForCompare(left, rawVal);
+          return a <= b;
+        }
+        case 'isEmpty':
+          return left === undefined || left === null || String(left) === '';
+        case 'isNotEmpty':
+          return !(left === undefined || left === null || String(left) === '');
+        default:
+          return true;
+      }
+    });
+
+    return logic === 'all' ? results.every(Boolean) : results.some(Boolean);
+  }
+
+  // 独立的可筛选表格视图，内部自管理筛选弹窗与条件，确保在 displayOnly 模式下也可正常交互
+  const FilterableTableView: React.FC<{ data: any; pag: { current: number; pageSize: number; showSizeChanger: boolean }; onPageChange?: (page: number, pageSize: number) => void; }>
+    = ({ data, pag, onPageChange }) => {
+      const [visible, setVisible] = useState(false);
+      const [logic, setLogic] = useState<'all' | 'any'>('all');
+      const [conds, setConds] = useState<Condition[]>([]);
+
+      const fields = getFieldsFromData(data);
+
+      const filtered = React.useMemo(() => {
+        if (!conds.length) return data;
+        if (Array.isArray(data)) return data.filter(item => applyConditionsToItem(item, conds, logic));
+        if (data && typeof data === 'object') return applyConditionsToItem(data, conds, logic) ? data : [];
+        return data;
+      }, [data, conds, logic]);
+
+      const total = Array.isArray(filtered) ? filtered.length : (filtered && typeof filtered === 'object' ? 1 : 0);
+
+      const operatorOptions = [
+        { label: '等于', value: 'equals' },
+        { label: '不等于', value: 'notEquals' },
+        { label: '包含', value: 'contains' },
+        { label: '不包含', value: 'notContains' },
+        { label: '开头是', value: 'startsWith' },
+        { label: '结尾是', value: 'endsWith' },
+        { label: '大于', value: 'gt' },
+        { label: '大于等于', value: 'gte' },
+        { label: '小于', value: 'lt' },
+        { label: '小于等于', value: 'lte' },
+        { label: '为空', value: 'isEmpty' },
+        { label: '不为空', value: 'isNotEmpty' },
+      ];
+
+      const addCond = () => {
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        setConds(prev => ([...prev, { id, field: fields[0], operator: 'contains', value: '' }]));
+      };
+
+      const reset = () => { setConds([]); setLogic('all'); };
+      const applyAndClose = () => { setVisible(false); };
+
+      return (
+        <div>
+          <div style={{ marginBottom: 8 }}>
+            <Popover
+              trigger="click"
+              placement="bottomLeft"
+              open={visible}
+              onOpenChange={(open) => setVisible(open)}
+              getPopupContainer={() => document.body}
+              overlayStyle={{ zIndex: 2000 }}
+              content={(
+                <div style={{ width: 360 }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <Space size={8}>
+                      <Text type="secondary">匹配逻辑</Text>
+                      <Select size="small" value={logic} onChange={(v) => setLogic(v as 'all' | 'any')} style={{ width: 140 }}
+                        options={[{ label: '全部匹配 (AND)', value: 'all' }, { label: '任一匹配 (OR)', value: 'any' }]} />
+                    </Space>
+                  </div>
+                  <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                    {conds.map((c) => (
+                      <Space key={c.id} align="start" wrap style={{ width: '100%' }}>
+                        <Select size="small" value={c.field} style={{ minWidth: 120 }} onChange={(v) => setConds(prev => prev.map(x => x.id === c.id ? { ...x, field: v } : x))}>
+                          {fields.map(f => <Option key={f} value={f}>{f}</Option>)}
+                        </Select>
+                        <Select size="small" value={c.operator} style={{ minWidth: 120 }} onChange={(v) => setConds(prev => prev.map(x => x.id === c.id ? { ...x, operator: v } : x))}>
+                          {operatorOptions.map(op => <Option key={op.value} value={op.value}>{op.label}</Option>)}
+                        </Select>
+                        <Input size="small" placeholder="值" style={{ minWidth: 120 }} value={c.value}
+                          onChange={(e) => setConds(prev => prev.map(x => x.id === c.id ? { ...x, value: e.target.value } : x))}
+                          disabled={c.operator === 'isEmpty' || c.operator === 'isNotEmpty'} />
+                        <Button size="small" danger onClick={() => setConds(prev => prev.filter(x => x.id !== c.id))}>删除</Button>
+                      </Space>
+                    ))}
+                    {conds.length === 0 && (<Text type="secondary">暂无筛选条件，点击“新增条件”开始</Text>)}
+                    <Divider style={{ margin: '8px 0' }} />
+                    <Space>
+                      <Button size="small" onClick={addCond} type="dashed">新增条件</Button>
+                      <Button size="small" onClick={reset}>重置</Button>
+                      <Button size="small" type="primary" onClick={applyAndClose}>应用</Button>
+                    </Space>
+                  </Space>
+                </div>
+              )}
+            >
+              <Button size="small" icon={<FilterOutlined />} onClick={() => setVisible(v => !v)}>Filter</Button>
+            </Popover>
+          </div>
+
           <Table
-            columns={generateTableColumns(dataToUse)}
-            dataSource={convertToTableData(dataToUse)}
+            columns={generateTableColumns(filtered)}
+            dataSource={convertToTableData(filtered)}
             pagination={{
-              current: pagination.current,
-              pageSize: pagination.pageSize,
+              current: pag.current,
+              pageSize: pag.pageSize,
               pageSizeOptions: [5, 10, 20, 50, 100],
-              total: pagination.total,
-              showSizeChanger: pagination.showSizeChanger,
+              total,
+              showSizeChanger: pag.showSizeChanger,
               showQuickJumper: true,
-              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
-              onChange: handleTablePaginationChange,
-              onShowSizeChange: handleTablePaginationChange,
+              showTotal: (t, range) => `${range[0]}-${range[1]} of ${t} items`,
+              onChange: onPageChange,
+              onShowSizeChange: onPageChange,
             }}
             scroll={{ x: true }}
             size="small"
           />
-        );
-        break;
-      case 'detail':
-        component = renderDetailView(dataToUse);
-        break;
-      case 'form':
-        component = renderFormView(dataToUse);
-        break;
-    }
+        </div>
+      );
+    };
 
-    if (component && onDisplayUI) {
-      onDisplayUI(component);
+  // 抽取：根据模式返回对应组件
+  const renderByMode = (mode: 'table' | 'detail' | 'form', dataToUse: any): React.ReactNode => {
+    switch (mode) {
+      case 'table': {
+        return (
+          <FilterableTableView
+            data={dataToUse}
+            pag={{ current: pagination.current, pageSize: pagination.pageSize, showSizeChanger: pagination.showSizeChanger }}
+            onPageChange={handleTablePaginationChange}
+          />
+        );
+      }
+      case 'detail':
+        return renderDetailView(dataToUse);
+      case 'form':
+        return renderFormView(dataToUse);
+      default:
+        return null;
     }
   };
 
@@ -636,11 +789,16 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
         <Title level={5}>Response</Title>
         {response && !response.error && (
-          <Dropdown menu={{ items: displayMenuItems }} trigger={['click']}>
-            <Button>
-              Display on UI <DownOutlined />
-            </Button>
-          </Dropdown>
+          <Select
+            size="small"
+            value={displayMode}
+            onChange={(v) => handleDisplayMode(v as 'table' | 'detail' | 'form')}
+            style={{ width: 160 }}
+          >
+            <Select.Option value="table"><Space><TableOutlined />Table</Space></Select.Option>
+            <Select.Option value="detail"><Space><FileTextOutlined />Detail</Space></Select.Option>
+            <Select.Option value="form"><Space><FormOutlined />Form</Space></Select.Option>
+          </Select>
         )}
       </div>
 

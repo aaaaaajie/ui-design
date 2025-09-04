@@ -443,7 +443,7 @@ const App: React.FC = () => {
                     <Button key="cancel" onClick={() => { setIsEditModalOpen(false); setEditingBlock(null); setEditInitialConfig(undefined); setEditDraftBlock(null); }}>取消</Button>,
                     <Button key="apply" type="primary" onClick={handleApplyEditConfig}>保存并应用</Button>,
                 ]}
-                destroyOnClose
+                destroyOnHidden
             >
                 {editDraftBlock && (
                     <Row gutter={24}>
@@ -501,7 +501,7 @@ const App: React.FC = () => {
                     <Button key="cancel" onClick={handleCancelCreateModal}>取消</Button>,
                     <Button key="ok" type="primary" onClick={handleInsertBlockFromDraft}>保存</Button>,
                 ]}
-                destroyOnClose
+                destroyOnHidden
             >
                 {draftBlock && (
                     <Row gutter={24}>
