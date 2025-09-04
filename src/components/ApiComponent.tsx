@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { Button, Dropdown, Layout, Row, Col, Card, Modal, Form, Input, Table, message } from 'antd';
 import { PlusOutlined, DownOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
@@ -34,6 +34,8 @@ interface Block {
     displayOnly?: boolean;
     // 新增：从数据源/模板注入的初始配置
     initialConfig?: Partial<RequestPanelConfig>;
+    // 新增：是否为占位区块
+    isPlaceholder?: boolean;
 }
 
 // 新增：数据源与模版类型
@@ -59,26 +61,14 @@ const App: React.FC = () => {
     // 新增：创建弹窗与草稿 block
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [draftBlock, setDraftBlock] = useState<Block | null>(null);
+    // 新增：记录要用“Blank Block”结果替换的占位区块 id
+    const [targetPlaceholderId, setTargetPlaceholderId] = useState<string | null>(null);
 
     // 新增：编辑配置弹窗状态（两栏编辑草稿）
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingBlock, setEditingBlock] = useState<Block | null>(null);
     const [editInitialConfig, setEditInitialConfig] = useState<Partial<RequestPanelConfig> | undefined>(undefined);
     const [editDraftBlock, setEditDraftBlock] = useState<Block | null>(null);
-
-    // 基于数据源渲染下拉菜单项
-    const dataSourceMenuItems = useMemo<MenuProps['items']>(() => {
-        const items: MenuProps['items'] = dataSources.map(ds => ({
-            key: `ds-${ds.id}`,
-            label: ds.name,
-            onClick: () => handleCreateFromDataSource(ds),
-        }));
-        return [
-            { type: 'group', key: 'group-templates', label: 'Saved Data Sources', children: items as any },
-            { type: 'divider' as const },
-            { key: 'blank-block', label: 'Blank Block', onClick: () => handleOpenCreateModal('api-request', 'API Request') },
-        ];
-    }, [dataSources]);
 
     // 生成字段列表（从 response.data 或 transformedData 推断）
     const inferFieldsFromResponse = (resp: any): Array<{ key: string; name: string; type: string }> => {
@@ -130,40 +120,55 @@ const App: React.FC = () => {
         });
     };
 
-    // 从数据源创建 Block
-    const handleCreateFromDataSource = (ds: DataSourceTemplate) => {
-        const newBlock: Block = {
+    // 新增：点击 Add block -> 仅一个菜单项“Request API”，创建占位区块
+    const handleAddRequestApi = () => {
+        const placeholder: Block = {
             id: `block-${Date.now()}`,
+            type: 'api-request',
+            title: 'Request API',
+            isPlaceholder: true,
+        };
+        setBlocks(prev => [...prev, placeholder]);
+    };
+
+    // 新增：构建占位区块中的“configure”下拉菜单（数据源 + Blank Block，Blank 放最后）
+    const buildConfigureMenuItems = (placeholderId: string): MenuProps['items'] => {
+        const dsItems: MenuProps['items'] = dataSources.map(ds => ({
+            key: `ds-${ds.id}`,
+            label: ds.name,
+            onClick: () => handleConfigureSelectDataSource(placeholderId, ds),
+        }));
+        return [
+            ...dsItems,
+            ...(dsItems.length ? [{ type: 'divider' as const }] : []),
+            { key: 'blank-block', label: 'Blank Block', onClick: () => handleConfigureSelectBlank(placeholderId) },
+        ];
+    };
+
+    // 新增：选择数据源 -> 就地替换占位区块为数据源区块
+    const handleConfigureSelectDataSource = (placeholderId: string, ds: DataSourceTemplate) => {
+        const updated: Block = {
+            id: placeholderId,
             type: 'api-request',
             title: ds.name,
             response: null,
             requestPanelRef: React.createRef(),
             currentPagination: { current: 1, pageSize: 10, total: 0, totalPages: 0 },
-            // 选择数据源直接进入仅展示模式
             displayOnly: true,
-            // 注入初始配置，避免在状态未就绪时用默认 URL 请求
             initialConfig: ds.config as Partial<RequestPanelConfig>,
         };
-        setBlocks(prev => [...prev, newBlock]);
-        // 取消立即触发请求，交由子组件在分页 effect 中自动触发，确保 initialConfig 先应用
-        // setTimeout(() => {
-        //     const ref = newBlock.requestPanelRef?.current;
-        //     if (ref?.setConfig) {
-        //         ref.setConfig(ds.config);
-        //     }
-        //     if (ref?.triggerRequest) {
-        //         ref.triggerRequest();
-        //     }
-        // }, 0);
+        setBlocks(prev => prev.map(b => (b.id === placeholderId ? updated : b)));
     };
 
-    // 菜单：合并默认与数据源
-    const addBlockMenuItems: MenuProps['items'] = [
-        {
-            key: 'request-api',
-            label: 'Request API',
-            children: dataSourceMenuItems as any,
-        },
+    // 新增：选择 Blank Block -> 打开创建弹窗，保存时用结果替换该占位区块
+    const handleConfigureSelectBlank = (placeholderId: string) => {
+        setTargetPlaceholderId(placeholderId);
+        handleOpenCreateModal('api-request', 'API Request');
+    };
+
+    // 顶部 Add block 菜单（仅一个）
+    const addMenuItems: MenuProps['items'] = [
+        { key: 'request-api', label: 'Request API', onClick: handleAddRequestApi },
     ];
 
     const handleOpenCreateModal = (type: string, title: string) => {
@@ -181,16 +186,27 @@ const App: React.FC = () => {
 
     const handleInsertBlockFromDraft = () => {
         if (!draftBlock) return;
+        // 提取当前配置，作为后续刷新所用的初始配置
+        const cfg: Partial<RequestPanelConfig> = draftBlock.requestPanelRef?.current?.getCurrentConfig?.() || {};
         // 保存为仅展示 UI 的区块
-        const finalized: Block = { ...draftBlock, displayOnly: true };
-        setBlocks(prev => [...prev, finalized]);
+        const finalized: Block = { ...draftBlock, displayOnly: true, initialConfig: cfg };
+
+        if (targetPlaceholderId) {
+            // 用草稿结果替换占位区块
+            setBlocks(prev => prev.map(b => (b.id === targetPlaceholderId ? { ...finalized, id: targetPlaceholderId } : b)));
+        } else {
+            // 直接追加
+            setBlocks(prev => [...prev, finalized]);
+        }
         setIsCreateModalOpen(false);
         setDraftBlock(null);
+        setTargetPlaceholderId(null);
     };
 
     const handleCancelCreateModal = () => {
         setIsCreateModalOpen(false);
         setDraftBlock(null);
+        // 不移除占位区块，用户可再次配置
     };
 
     const handleRemoveBlock = (blockId: string) => {
@@ -276,7 +292,7 @@ const App: React.FC = () => {
                 {/* 添加块按钮 */}
                 <div style={{ marginBottom: '24px' }}>
                     <Dropdown
-                        menu={{ items: addBlockMenuItems }}
+                        menu={{ items: addMenuItems }}
                         trigger={['hover']}
                         placement="bottomLeft"
                     >
@@ -304,116 +320,133 @@ const App: React.FC = () => {
                         style={{ marginBottom: '24px' }}
                         title={block.title}
                         extra={
-                            <>
-                                <Button
-                                    type="default"
-                                    size="small"
-                                    icon={<SettingOutlined />}
-                                    style={{ marginRight: 8 }}
-                                    onClick={() => handleOpenEditModal(block.id)}
-                                >
-                                    配置
-                                </Button>
-                                {/* 新增：刷新按钮 */}
-                                <Button
-                                    type="default"
-                                    size="small"
-                                    icon={<ReloadOutlined />}
-                                    style={{ marginRight: 8 }}
-                                    onClick={() => handleRefreshBlock(block.id)}
-                                >
-                                    刷新
-                                </Button>
-                                <Button
-                                    type="text"
-                                    danger
-                                    onClick={() => handleRemoveBlock(block.id)}
-                                >
-                                    ×
-                                </Button>
-                            </>
+                            block.isPlaceholder ? (
+                                <Button type="text" danger onClick={() => handleRemoveBlock(block.id)}>×</Button>
+                            ) : (
+                                <>
+                                    <Button
+                                        type="default"
+                                        size="small"
+                                        icon={<SettingOutlined />}
+                                        style={{ marginRight: 8 }}
+                                        onClick={() => handleOpenEditModal(block.id)}
+                                    >
+                                        配置
+                                    </Button>
+                                    {/* 新增：刷新按钮 */}
+                                    <Button
+                                        type="default"
+                                        size="small"
+                                        icon={<ReloadOutlined />}
+                                        style={{ marginRight: 8 }}
+                                        onClick={() => handleRefreshBlock(block.id)}
+                                    >
+                                        刷新
+                                    </Button>
+                                    <Button
+                                        type="text"
+                                        danger
+                                        onClick={() => handleRemoveBlock(block.id)}
+                                    >
+                                        ×
+                                    </Button>
+                                </>
+                            )
                         }
                     >
-                        {/* displayOnly: 只展示 UI 表格 */}
-                        {block.displayOnly ? (
-                            <>
-                                <Card style={{ minHeight: '200px' }}>
-                                    {block.displayComponent ? (
-                                        block.displayComponent
-                                    ) : (
-                                        <div style={{ textAlign: 'center', color: '#999', padding: 24 }}>
-                                            表格尚未生成，请执行一次请求。
-                                        </div>
-                                    )}
-                                </Card>
-                                {/* 隐藏挂载请求/响应面板，用于自动请求与渲染 UI Display */}
-                                <div style={{ display: 'none' }}>
-                                    <ApiRequestPanel
-                                        ref={block.requestPanelRef}
-                                        blockId={block.id}
-                                        onResponse={(response) => handleResponse(block.id, response)}
-                                        currentPagination={block.currentPagination}
-                                        // 新增：传入初始配置，确保用数据源配置请求
-                                        initialConfig={block.initialConfig}
-                                    />
-                                    {block.response && (
-                                        <ApiResponsePanel
-                                            blockId={block.id}
-                                            response={block.response}
-                                            onDisplayUI={(displayData: React.ReactNode) => handleDisplayUI(block.id, displayData)}
-                                            onPaginationChange={(pagination) => handlePaginationChange(block.id, pagination)}
-                                        />
-                                    )}
-                                </div>
-                            </>
+                        {/* 新增：占位区块渲染 */}
+                        {block.isPlaceholder ? (
+                            <div style={{ minHeight: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Dropdown
+                                    menu={{ items: buildConfigureMenuItems(block.id) }}
+                                    trigger={['hover']}
+                                    placement="bottomCenter"
+                                >
+                                    <Button type="primary" ghost>configure</Button>
+                                </Dropdown>
+                            </div>
                         ) : (
-                            <Row gutter={24}>
-                                <Col span={12}>
-                                    <div>
+                            // ...existing code...
+                            block.displayOnly ? (
+                                <>
+                                    <Card style={{ minHeight: '200px' }}>
+                                        {block.displayComponent ? (
+                                            block.displayComponent
+                                        ) : (
+                                            <div style={{ textAlign: 'center', color: '#999', padding: 24 }}>
+                                                表格尚未生成，请执行一次请求。
+                                            </div>
+                                        )}
+                                    </Card>
+                                    {/* 隐藏挂载请求/响应面板，用于自动请求与渲染 UI Display */}
+                                    <div style={{ display: 'none' }}>
                                         <ApiRequestPanel
                                             ref={block.requestPanelRef}
                                             blockId={block.id}
                                             onResponse={(response) => handleResponse(block.id, response)}
-                                            // 将 UI 的分页状态传给请求面板
                                             currentPagination={block.currentPagination}
-                                            // 兼容：非 displayOnly 场景也可传入初始配置（如后续扩展需要）
+                                            // 新增：传入初始配置，确保用数据源配置请求
                                             initialConfig={block.initialConfig}
                                         />
                                         {block.response && (
-                                            <div style={{ marginTop: '24px' }}>
-                                                <ApiResponsePanel
-                                                    blockId={block.id}
-                                                    response={block.response}
-                                                    onDisplayUI={(displayData: React.ReactNode) => handleDisplayUI(block.id, displayData)}
-                                                    onPaginationChange={(pagination) => handlePaginationChange(block.id, pagination)}
-                                                />
-                                            </div>
+                                            <ApiResponsePanel
+                                                blockId={block.id}
+                                                response={block.response}
+                                                onDisplayUI={(displayData: React.ReactNode) => handleDisplayUI(block.id, displayData)}
+                                                onPaginationChange={(pagination) => handlePaginationChange(block.id, pagination)}
+                                            />
                                         )}
                                     </div>
-                                </Col>
-                                <Col span={12}>
-                                    {block.displayComponent && (
-                                        <Card title="UI Display" style={{ minHeight: '400px' }}>
-                                            {block.displayComponent}
-                                        </Card>
-                                    )}
-                                    {!block.displayComponent && (
-                                        <Card
-                                            title="UI Display"
-                                            style={{
-                                                minHeight: '400px',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center'
-                                            }}
-                                        >
-                                            <div style={{ textAlign: 'center', color: '#999' }}>
-                                                <p>Send a request and click "Display on UI" to render components here</p>
-                                            </div>
-                                        </Card>
-                                    )}
-                                </Col>
-                            </Row>
+                                </>
+                            ) : (
+                                <Row gutter={24}>
+                                    <Col span={12}>
+                                        <div>
+                                            <ApiRequestPanel
+                                                ref={block.requestPanelRef}
+                                                blockId={block.id}
+                                                onResponse={(response) => handleResponse(block.id, response)}
+                                                // 将 UI 的分页状态传给请求面板
+                                                currentPagination={block.currentPagination}
+                                                // 兼容：非 displayOnly 场景也可传入初始配置（如后续扩展需要）
+                                                initialConfig={block.initialConfig}
+                                            />
+                                            {block.response && (
+                                                <div style={{ marginTop: '24px' }}>
+                                                    <ApiResponsePanel
+                                                        blockId={block.id}
+                                                        response={block.response}
+                                                        onDisplayUI={(displayData: React.ReactNode) => handleDisplayUI(block.id, displayData)}
+                                                        onPaginationChange={(pagination) => handlePaginationChange(block.id, pagination)}
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </Col>
+                                    <Col span={12}>
+                                        {block.displayComponent && (
+                                            <Card title="UI Display" style={{ minHeight: '400px' }}>
+                                                {block.displayComponent}
+                                            </Card>
+                                        )}
+                                        {!block.displayComponent && (
+                                            <Card
+                                                title="UI Display"
+                                                style={{
+                                                    minHeight: '400px',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    justifyContent: 'center'
+                                                }}
+                                            >
+                                                <div style={{ textAlign: 'center', color: '#999' }}>
+                                                    <p>Send a request and click "Display on UI" to render components here</p>
+                                                </div>
+                                            </Card>
+                                        )}
+                                    </Col>
+                                </Row>
+                            )
                         )}
                     </Card>
                 ))}
