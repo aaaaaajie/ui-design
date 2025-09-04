@@ -12,6 +12,7 @@ interface ResponseData {
     statusText?: string;
     headers?: Record<string, any>;
     data?: any;
+    paginationMapping?: any; // 分页映射配置
     config?: any;
     timestamp?: string;
     error?: boolean;
@@ -23,6 +24,7 @@ interface Block {
     title: string;
     response?: ResponseData | null;
     displayComponent?: React.ReactNode;
+    requestPanelRef?: React.RefObject<any>;
 }
 
 const App: React.FC = () => {
@@ -49,6 +51,7 @@ const App: React.FC = () => {
             type: type as 'api-request',
             title,
             response: null,
+            requestPanelRef: React.createRef(),
         };
         setBlocks(prev => [...prev, newBlock]);
     };
@@ -71,6 +74,22 @@ const App: React.FC = () => {
                 ? { ...block, displayComponent: displayData }
                 : block
         ));
+    };
+
+    const handlePaginationChange = (blockId: string, pagination: { current: number; pageSize: number }) => {
+        // 通过 ref 调用请求面板的分页更新方法
+        const block = blocks.find(b => b.id === blockId);
+        if (block?.requestPanelRef?.current) {
+            block.requestPanelRef.current.updatePaginationParams(pagination);
+        }
+    };
+
+    const handleTriggerRequest = (blockId: string) => {
+        // 通过 ref 调用请求面板的发送请求方法
+        const block = blocks.find(b => b.id === blockId);
+        if (block?.requestPanelRef?.current) {
+            block.requestPanelRef.current.triggerRequest();
+        }
     };
 
     return (
@@ -121,6 +140,7 @@ const App: React.FC = () => {
                                 <Col span={12}>
                                     <div>
                                         <ApiRequestPanel
+                                            ref={block.requestPanelRef}
                                             blockId={block.id}
                                             onResponse={(response) => handleResponse(block.id, response)}
                                         />
@@ -130,6 +150,7 @@ const App: React.FC = () => {
                                                     blockId={block.id}
                                                     response={block.response}
                                                     onDisplayUI={(displayData: React.ReactNode) => handleDisplayUI(block.id, displayData)}
+                                                    onPaginationChange={(pagination) => handlePaginationChange(block.id, pagination)}
                                                 />
                                             </div>
                                         )}

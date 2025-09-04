@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { 
-  Typography, 
-  Card, 
-  Tabs, 
-  Button, 
-  Dropdown, 
-  Table, 
-  Descriptions, 
-  Form, 
+import {
+  Typography,
+  Card,
+  Tabs,
+  Button,
+  Dropdown,
+  Table,
+  Descriptions,
+  Form,
   Input,
   Space,
   Tag,
@@ -28,6 +28,7 @@ interface ResponseData {
   headers?: Record<string, any>;
   data?: any;
   transformedData?: any; // 新增转换后的数据
+  paginationMapping?: any; // 分页映射配置
   config?: any;
   timestamp?: string;
   error?: boolean;
@@ -37,15 +38,140 @@ interface ApiResponsePanelProps {
   blockId: string;
   response?: ResponseData | null;
   onDisplayUI?: (component: React.ReactNode) => void;
+  onPaginationChange?: (pagination: { current: number; pageSize: number }) => void;
+  onTriggerRequest?: () => void;
+  onCreateVariable?: (variableData: { name: string; value: string; type: string; source: string }) => void;
 }
 
-const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplayUI }) => {
+const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplayUI, onPaginationChange, onTriggerRequest, onCreateVariable }) => {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [submitConfig, setSubmitConfig] = useState({
     method: 'POST',
     url: '',
     headers: {} as Record<string, string>,
   });
+  const [pagination, setPagination] = useState({
+    current: 1,
+    pageSize: 10,
+    total: 0,
+    showSizeChanger: true,
+  });
+
+  // 从响应数据中提取分页信息
+  const extractPaginationFromResponse = (response: ResponseData) => {
+    if (!response || !response.paginationMapping || response.error) return;
+
+    const mapping = response.paginationMapping;
+    const data = response.data;
+
+    if (!data || typeof data !== 'object') return;
+
+    const newPagination = { ...pagination };
+
+    // 提取当前页
+    if (mapping.enabledFields.currentPage && mapping.currentPage) {
+      const currentPageValue = getNestedValue(data, mapping.currentPage);
+      if (currentPageValue !== undefined) {
+        newPagination.current = Number(currentPageValue) || 1;
+      }
+    }
+
+    // 提取每页条数
+    if (mapping.enabledFields.pageSize && mapping.pageSize) {
+      const pageSizeValue = getNestedValue(data, mapping.pageSize);
+      if (pageSizeValue !== undefined) {
+        newPagination.pageSize = Number(pageSizeValue) || 10;
+      }
+    }
+
+    // 提取总记录数
+    if (mapping.enabledFields.total && mapping.total) {
+      const totalValue = getNestedValue(data, mapping.total);
+      if (totalValue !== undefined) {
+        newPagination.total = Number(totalValue) || 0;
+      }
+    }
+
+    setPagination(newPagination);
+  };
+
+  // 获取嵌套对象的值
+  const getNestedValue = (obj: any, path: string): any => {
+    return path.split('.').reduce((current, key) => current?.[key], obj);
+  };
+
+  // 处理分页变化
+  const handleTablePaginationChange = (page: number, pageSize: number) => {
+    const newPagination = { ...pagination, current: page, pageSize };
+    setPagination(newPagination);
+
+    if (onPaginationChange) {
+      onPaginationChange({ current: page, pageSize });
+    }
+
+    // 自动触发 API 请求
+    if (onTriggerRequest) {
+      // 使用 setTimeout 确保参数更新后再触发请求
+      setTimeout(() => {
+        onTriggerRequest();
+      }, 100);
+    }
+  };
+
+  // 当响应数据变化时，提取分页信息
+  React.useEffect(() => {
+    if (response) {
+      extractPaginationFromResponse(response);
+    }
+  }, [response]);
+
+  // 生成数据字段schema
+  const generateSchema = (data: any, prefix: string = ''): Array<{ key: string; field: string; type: string; value: any; path: string }> => {
+    const schema: Array<{ key: string; field: string; type: string; value: any; path: string }> = [];
+    
+    if (!data || typeof data !== 'object') return schema;
+    
+    const processObject = (obj: any, currentPrefix: string) => {
+      Object.entries(obj).forEach(([key, value], index) => {
+        const path = currentPrefix ? `${currentPrefix}.${key}` : key;
+        const fieldType = Array.isArray(value) ? 'array' : typeof value;
+        
+        schema.push({
+          key: `${currentPrefix}-${key}-${index}`,
+          field: key,
+          type: fieldType,
+          value: fieldType === 'object' ? JSON.stringify(value) : String(value),
+          path: path
+        });
+        
+        // 如果是对象且不是数组，递归处理
+        if (typeof value === 'object' && !Array.isArray(value) && value !== null) {
+          processObject(value, path);
+        }
+      });
+    };
+    
+    if (Array.isArray(data) && data.length > 0) {
+      // 如果是数组，处理第一个元素作为schema样本
+      processObject(data[0], prefix);
+    } else {
+      processObject(data, prefix);
+    }
+    
+    return schema;
+  };
+
+  // 处理创建变量
+  const handleCreateVariable = (fieldData: { field: string; type: string; value: any; path: string }) => {
+    if (onCreateVariable) {
+      onCreateVariable({
+        name: fieldData.field,
+        value: fieldData.value,
+        type: fieldData.type,
+        source: fieldData.path
+      });
+    }
+  };
 
   // 显示模式下拉菜单
   const displayMenuItems: MenuProps['items'] = [
@@ -82,7 +208,17 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
           <Table
             columns={generateTableColumns(dataToUse)}
             dataSource={convertToTableData(dataToUse)}
-            pagination={{ pageSize: 10 }}
+            pagination={{
+              current: pagination.current,
+              pageSize: pagination.pageSize,
+              pageSizeOptions: [5, 10, 20, 50, 100],
+              total: pagination.total,
+              showSizeChanger: pagination.showSizeChanger,
+              showQuickJumper: true,
+              showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+              onChange: handleTablePaginationChange,
+              onShowSizeChange: handleTablePaginationChange,
+            }}
             scroll={{ x: true }}
             size="small"
           />
@@ -103,12 +239,12 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
 
   // 渲染响应状态
   const renderStatus = (response: ResponseData) => {
-    const statusColor = response.error 
-      ? 'error' 
-      : response.status && response.status >= 200 && response.status < 300 
-        ? 'success' 
+    const statusColor = response.error
+      ? 'error'
+      : response.status && response.status >= 200 && response.status < 300
+        ? 'success'
         : 'warning';
-    
+
     return (
       <Space>
         <Tag color={statusColor}>
@@ -166,7 +302,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     const items = Object.entries(data).map(([key, value], index) => ({
       key: index.toString(),
       label: key.charAt(0).toUpperCase() + key.slice(1),
-      children: typeof value === 'object' 
+      children: typeof value === 'object'
         ? <pre>{JSON.stringify(value, null, 2)}</pre>
         : String(value),
     }));
@@ -177,7 +313,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
   // 渲染表单视图
   const renderFormView = (data: any) => {
     const fields = typeof data === 'object' && data !== null ? data : {};
-    
+
     return (
       <div>
         <Form
@@ -201,7 +337,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
         </Form>
 
         <Divider />
-        
+
         <Card title="Submit Configuration" size="small">
           <Form layout="vertical">
             <Form.Item label="Method">
@@ -222,8 +358,8 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
               />
             </Form.Item>
             <Form.Item>
-              <Button 
-                type="primary" 
+              <Button
+                type="primary"
                 onClick={() => handleFormSubmit()}
                 disabled={!submitConfig.url}
               >
@@ -273,9 +409,9 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
               style={{ marginBottom: '16px' }}
             />
           ) : (
-            <pre style={{ 
-              background: '#f5f5f5', 
-              padding: '12px', 
+            <pre style={{
+              background: '#f5f5f5',
+              padding: '12px',
               borderRadius: '4px',
               maxHeight: '400px',
               overflow: 'auto'
@@ -294,7 +430,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
       key: 'headers',
       label: 'Headers',
       children: response?.headers ? (
-        <Descriptions 
+        <Descriptions
           items={Object.entries(response.headers).map(([key, value], index) => ({
             key: index.toString(),
             label: key,
@@ -305,6 +441,104 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
         />
       ) : (
         <Text type="secondary">No headers</Text>
+      ),
+    },
+    {
+      key: 'schema',
+      label: 'Schema',
+      children: response && !response.error ? (
+        <div>
+          <div style={{ marginBottom: '16px' }}>
+            <Text type="secondary">
+              Data fields extracted from {response.transformedData !== undefined ? 'transformed' : 'raw'} response
+            </Text>
+          </div>
+          
+          {(() => {
+            const dataToUse = response.transformedData !== undefined ? response.transformedData : response.data;
+            const schema = generateSchema(dataToUse);
+            
+            if (schema.length === 0) {
+              return (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  <Text>No schema available for this response</Text>
+                </div>
+              );
+            }
+            
+            return (
+              <Table
+                columns={[
+                  {
+                    title: 'Field',
+                    dataIndex: 'field',
+                    key: 'field',
+                    width: 150,
+                  },
+                  {
+                    title: 'Type',
+                    dataIndex: 'type',
+                    key: 'type',
+                    width: 100,
+                    render: (type: string) => (
+                      <Tag color={
+                        type === 'string' ? 'blue' :
+                        type === 'number' ? 'green' :
+                        type === 'boolean' ? 'orange' :
+                        type === 'object' ? 'purple' :
+                        type === 'array' ? 'cyan' : 'default'
+                      }>
+                        {type}
+                      </Tag>
+                    ),
+                  },
+                  {
+                    title: 'Value',
+                    dataIndex: 'value',
+                    key: 'value',
+                    render: (value: any) => (
+                      <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <Text type="secondary" style={{ fontSize: '12px' }}>
+                          {String(value).length > 50 ? String(value).substring(0, 50) + '...' : String(value)}
+                        </Text>
+                      </div>
+                    ),
+                  },
+                  {
+                    title: 'Path',
+                    dataIndex: 'path',
+                    key: 'path',
+                    render: (path: string) => (
+                      <Text type="secondary" style={{ fontSize: '12px' }}>{path}</Text>
+                    ),
+                  },
+                  {
+                    title: 'Action',
+                    key: 'action',
+                    width: 100,
+                    render: (record: { field: string; type: string; value: any; path: string }) => (
+                      <Button
+                        type="primary"
+                        size="small"
+                        onClick={() => handleCreateVariable(record)}
+                      >
+                        Create Variable
+                      </Button>
+                    ),
+                  },
+                ]}
+                dataSource={schema}
+                pagination={{ pageSize: 10, size: 'small' }}
+                size="small"
+                scroll={{ x: true }}
+              />
+            );
+          })()}
+        </div>
+      ) : (
+        <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+          <Text>No response data available</Text>
+        </div>
       ),
     },
   ];
