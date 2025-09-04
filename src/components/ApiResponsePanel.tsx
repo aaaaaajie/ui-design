@@ -57,11 +57,26 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     showSizeChanger: true,
   });
 
-  // 从响应数据中提取分页信息
-  const extractPaginationFromResponse = (response: ResponseData) => {
-    if (!response || !response.paginationMapping || response.error) return;
+  // 规范化响应路径，支持输入 response.data.xxx 或 data.xxx，统一为相对 data 的路径
+  const normalizeResponsePath = (path?: string): string => {
+    if (!path) return '';
+    let p = String(path).trim();
+    if (p.startsWith('response.data.')) return p.replace(/^response\.data\./, '');
+    if (p.startsWith('data.')) return p.replace(/^data\./, '');
+    return p;
+  };
 
-    const mapping = response.paginationMapping;
+  const toNumber = (val: any, fallback: number): number => {
+    const n = Number(val);
+    return Number.isFinite(n) ? n : fallback;
+  };
+
+  // 从响应数据中提取分页信息（支持自定义响应字段路径）
+  const extractPaginationFromResponse = (response: ResponseData) => {
+    if (!response || response.error) return;
+
+    const mapping = response.paginationMapping || {};
+    const respFields = mapping.responseFields || {};
     const data = response.data;
 
     if (!data || typeof data !== 'object') return;
@@ -69,34 +84,62 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     const newPagination = { ...pagination };
 
     // 提取当前页
-    if (mapping.enabledFields.currentPage && mapping.currentPage) {
-      const currentPageValue = getNestedValue(data, mapping.currentPage);
-      if (currentPageValue !== undefined) {
-        newPagination.current = Number(currentPageValue) || 1;
+    if (respFields.currentPage) {
+      const currentPath = normalizeResponsePath(respFields.currentPage);
+      if (currentPath) {
+        const currentPageValue = getNestedValue(data, currentPath);
+        if (currentPageValue !== undefined) {
+          newPagination.current = toNumber(currentPageValue, newPagination.current);
+        }
       }
     }
 
     // 提取每页条数
-    if (mapping.enabledFields.pageSize && mapping.pageSize) {
-      const pageSizeValue = getNestedValue(data, mapping.pageSize);
-      if (pageSizeValue !== undefined) {
-        newPagination.pageSize = Number(pageSizeValue) || 10;
+    if (respFields.pageSize) {
+      const sizePath = normalizeResponsePath(respFields.pageSize);
+      if (sizePath) {
+        const pageSizeValue = getNestedValue(data, sizePath);
+        if (pageSizeValue !== undefined) {
+          newPagination.pageSize = toNumber(pageSizeValue, newPagination.pageSize);
+        }
       }
     }
 
     // 提取总记录数
-    if (mapping.enabledFields.total && mapping.total) {
-      const totalValue = getNestedValue(data, mapping.total);
-      if (totalValue !== undefined) {
-        newPagination.total = Number(totalValue) || 0;
+    let extractedTotal: number | undefined = undefined;
+    if (respFields.total) {
+      const totalPath = normalizeResponsePath(respFields.total);
+      if (totalPath) {
+        const totalValue = getNestedValue(data, totalPath);
+        if (totalValue !== undefined) {
+          extractedTotal = toNumber(totalValue, newPagination.total);
+          newPagination.total = extractedTotal;
+        }
       }
     }
 
+    // 提取总页数（若提供），在没有 total 时用 totalPages * pageSize 估算 total
+    if (respFields.totalPages) {
+      const totalPagesPath = normalizeResponsePath(respFields.totalPages);
+      if (totalPagesPath) {
+        const totalPagesValue = getNestedValue(data, totalPagesPath);
+        if (totalPagesValue !== undefined) {
+          const tp = toNumber(totalPagesValue, NaN);
+          if (Number.isFinite(tp) && !Number.isFinite(extractedTotal as number)) {
+            // 仅当未从 total 提取到值时，才用 totalPages 推导 total
+            const size = newPagination.pageSize > 0 ? newPagination.pageSize : 10;
+            newPagination.total = tp * size;
+          }
+        }
+      }
+    }
+    console.log(newPagination, '456');
     setPagination(newPagination);
   };
 
   // 获取嵌套对象的值
   const getNestedValue = (obj: any, path: string): any => {
+    if (!path) return undefined;
     return path.split('.').reduce((current, key) => current?.[key], obj);
   };
 
@@ -109,7 +152,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
       onPaginationChange({ current: page, pageSize });
     }
 
-    // 自动触发 API 请求
+    // 自动触发 API 请求（如果父层提供该回调）
     if (onTriggerRequest) {
       // 使用 setTimeout 确保参数更新后再触发请求
       setTimeout(() => {
@@ -124,6 +167,33 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
       extractPaginationFromResponse(response);
     }
   }, [response]);
+
+  // 新增：响应或分页改变时，自动将表格渲染到 UI Display（等效于自动点击“Display on UI”-> Table）
+  React.useEffect(() => {
+    if (!response || response.error || !onDisplayUI) return;
+    const dataToUse = response.transformedData !== undefined ? response.transformedData : response.data;
+    console.log(response, '123');
+    onDisplayUI(
+      <Table
+        columns={generateTableColumns(dataToUse)}
+        dataSource={convertToTableData(dataToUse)}
+        pagination={{
+          current: pagination.current,
+          pageSize: pagination.pageSize,
+          pageSizeOptions: [5, 10, 20, 50, 100],
+          total: pagination.total,
+          showSizeChanger: pagination.showSizeChanger,
+          showQuickJumper: true,
+          showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} items`,
+          onChange: handleTablePaginationChange,
+          onShowSizeChange: handleTablePaginationChange,
+        }}
+        scroll={{ x: true }}
+        size="small"
+      />
+    );
+    // 仅在 response 或分页值变化时更新显示
+  }, [response, pagination.current, pagination.pageSize]);
 
   // 生成数据字段schema
   const generateSchema = (data: any, prefix: string = ''): Array<{ key: string; field: string; type: string; value: any; path: string }> => {

@@ -35,6 +35,7 @@ interface QueryParam {
 type PaginationSourceKey = 'currentPage' | 'pageSize' | 'total' | 'totalPages';
 
 interface PaginationMapping {
+  // 请求侧字段名（写入 params/body 用）
   currentPage: string;
   pageSize: string;
   total: string;
@@ -46,12 +47,19 @@ interface PaginationMapping {
     total: boolean;
     totalPages: boolean;
   };
-  // 新增：每个字段所绑定的内置变量
+  // 每个字段所绑定的内置变量（用于写入请求）
   valueSources: {
     currentPage: PaginationSourceKey;
     pageSize: PaginationSourceKey;
     total: PaginationSourceKey;
     totalPages: PaginationSourceKey;
+  };
+  // 新增：响应侧字段路径（相对于 response.data）
+  responseFields: {
+    currentPage: string;
+    pageSize: string;
+    total: string;
+    totalPages: string;
   };
 }
 
@@ -89,7 +97,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   const [body, setBody] = useState<string>('');
   const [bodyType, setBodyType] = useState<string>('json');
   const [loading, setLoading] = useState<boolean>(false);
-  const [transformer, setTransformer] = useState<string>('data.users');
+  const [transformer, setTransformer] = useState<string>('data');
   const [variables, setVariables] = useState<Variable[]>([]);
   const [paginationMapping, setPaginationMapping] = useState<PaginationMapping>({
     currentPage: 'page',
@@ -107,6 +115,13 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       currentPage: 'currentPage',
       pageSize: 'pageSize',
       total: 'total',
+      totalPages: 'totalPages',
+    },
+    // 默认响应字段路径（基于你的示例）
+    responseFields: {
+      currentPage: 'currentPage',
+      pageSize: 'pageSize',
+      total: 'totalCount',
       totalPages: 'totalPages',
     }
   });
@@ -342,13 +357,36 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     }
   };
 
-  // 新增：更新字段的内置变量绑定
+  // 新增：更新字段的内置变量绑定（请求侧）
   const updatePaginationValueSource = (fieldName: keyof PaginationMapping['valueSources'], source: PaginationSourceKey) => {
     const newMapping: PaginationMapping = {
       ...paginationMapping,
       valueSources: {
         ...paginationMapping.valueSources,
         [fieldName]: source,
+      },
+    };
+    setPaginationMapping(newMapping);
+    if (onPaginationChange) {
+      onPaginationChange(newMapping);
+    }
+  };
+
+  // 新增：更新响应字段路径
+  const updatePaginationResponseField = (fieldName: keyof PaginationMapping['responseFields'], path: string) => {
+    // 允许用户输入如 "response.data.totalCount" 或 "data.totalCount"，统一裁剪到相对 data 的路径
+    let normalized = path.trim();
+    // if (normalized.startsWith('response.data.')) {
+    //   normalized = normalized.replace(/^response\.data\./, '');
+    // } else if (normalized.startsWith('data.')) {
+    //   normalized = normalized.replace(/^data\./, '');
+    // }
+
+    const newMapping: PaginationMapping = {
+      ...paginationMapping,
+      responseFields: {
+        ...paginationMapping.responseFields,
+        [fieldName]: normalized,
       },
     };
     setPaginationMapping(newMapping);
@@ -429,7 +467,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
           headers: response.headers,
           data: response.data, // 原始数据
           transformedData: transformedData, // 转换后的数据
-          paginationMapping: paginationMapping, // 分页映射配置
+          paginationMapping: paginationMapping, // 分页映射配置（含响应映射）
           config: config,
           timestamp: new Date().toISOString(),
         });
@@ -682,7 +720,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
           </div>
 
           {
-            // 两列表格：请求参数名、绑定内置变量
+            // 请求映射表
           }
           <Table
             size="small"
@@ -733,6 +771,63 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
               例如：如果条数字段名填为 <code>limit</code> 且绑定到内置 <code>pageSize</code>，切换每页条数时会自动设置 <code>limit</code>。
             </Text>
           </div>
+
+          <div style={{ marginTop: 24, marginBottom: 8 }}>
+            <Text strong>响应数据映射到分页变量</Text>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                从响应数据中提取分页信息。填写路径相对于 <code>response.data</code>，例如 <code>totalCount</code>、<code>result.page.current</code>。
+                也可输入 <code>data.totalCount</code> 或 <code>response.data.totalCount</code>，系统会自动规范化。
+              </Text>
+            </div>
+          </div>
+
+          {
+            // 响应映射表
+          }
+          <Table
+            size="small"
+            pagination={false}
+            rowKey={(record: any) => `resp-${record.key}`}
+            columns={[
+              {
+                title: '响应数据路径 (相对 response.data)',
+                dataIndex: 'respPath',
+                render: (_: any, record: any) => (
+                  <Input
+                    placeholder={record.placeholder}
+                    value={(paginationMapping.responseFields as any)[record.mappingKey]}
+                    onChange={(e) => updatePaginationResponseField(record.mappingKey as keyof PaginationMapping['responseFields'], e.target.value)}
+                    size="small"
+                  />
+                ),
+              },
+              {
+                title: '绑定内置变量',
+                dataIndex: 'bind',
+                render: (_: any, record: any) => (
+                  <Select
+                    size="small"
+                    style={{ width: '100%' }}
+                    value={record.mappingKey}
+                    disabled
+                    options={[
+                      { label: 'currentPage', value: 'currentPage' },
+                      { label: 'pageSize', value: 'pageSize' },
+                      { label: 'total', value: 'total' },
+                      { label: 'totalPages', value: 'totalPages' },
+                    ]}
+                  />
+                ),
+              },
+            ]}
+            dataSource={[
+              { key: 'total', label: '总条数', mappingKey: 'total', placeholder: '如 totalCount 或 meta.total' },
+              { key: 'currentPage', label: '当前页', mappingKey: 'currentPage', placeholder: '如 currentPage 或 page.current' },
+              { key: 'pageSize', label: '每页条数', mappingKey: 'pageSize', placeholder: '如 pageSize 或 page.size' },
+              { key: 'totalPages', label: '总页数(可选)', mappingKey: 'totalPages', placeholder: '如 totalPages' },
+            ]}
+          />
         </div>
       ),
     },

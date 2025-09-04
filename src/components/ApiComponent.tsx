@@ -25,6 +25,8 @@ interface Block {
     response?: ResponseData | null;
     displayComponent?: React.ReactNode;
     requestPanelRef?: React.RefObject<any>;
+    // 将 total 设为必填，保证传给 ApiRequestPanel 的类型一致
+    currentPagination?: { current: number; pageSize: number; total: number; totalPages?: number };
 }
 
 const App: React.FC = () => {
@@ -52,6 +54,8 @@ const App: React.FC = () => {
             title,
             response: null,
             requestPanelRef: React.createRef(),
+            // 默认分页
+            currentPagination: { current: 1, pageSize: 10, total: 0, totalPages: 0 },
         };
         setBlocks(prev => [...prev, newBlock]);
     };
@@ -77,19 +81,10 @@ const App: React.FC = () => {
     };
 
     const handlePaginationChange = (blockId: string, pagination: { current: number; pageSize: number }) => {
-        // 通过 ref 调用请求面板的分页更新方法
-        const block = blocks.find(b => b.id === blockId);
-        if (block?.requestPanelRef?.current) {
-            block.requestPanelRef.current.updatePaginationParams(pagination);
-        }
-    };
-
-    const handleTriggerRequest = (blockId: string) => {
-        // 通过 ref 调用请求面板的发送请求方法
-        const block = blocks.find(b => b.id === blockId);
-        if (block?.requestPanelRef?.current) {
-            block.requestPanelRef.current.triggerRequest();
-        }
+        // 仅更新该 block 的 UI 分页状态；请求面板会通过 props 感知变化并自动同步 params + 触发请求
+        setBlocks(prev => prev.map(b => (
+            b.id === blockId ? { ...b, currentPagination: { ...(b.currentPagination || { current: 1, pageSize: 10, total: 0 }), ...pagination } } : b
+        )));
     };
 
     return (
@@ -143,6 +138,8 @@ const App: React.FC = () => {
                                             ref={block.requestPanelRef}
                                             blockId={block.id}
                                             onResponse={(response) => handleResponse(block.id, response)}
+                                            // 将 UI 的分页状态传给请求面板
+                                            currentPagination={block.currentPagination}
                                         />
                                         {block.response && (
                                             <div style={{ marginTop: '24px' }}>
