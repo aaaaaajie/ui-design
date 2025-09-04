@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Button, Dropdown, Layout, Row, Col, Card, Modal, Form, Input, Table, message } from 'antd';
-import { PlusOutlined, DownOutlined, SaveOutlined } from '@ant-design/icons';
+import { PlusOutlined, DownOutlined, SaveOutlined, SettingOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import ApiRequestPanel from './ApiRequestPanel';
 import ApiResponsePanel from './ApiResponsePanel';
@@ -58,6 +58,12 @@ const App: React.FC = () => {
     // 新增：创建弹窗与草稿 block
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [draftBlock, setDraftBlock] = useState<Block | null>(null);
+
+    // 新增：编辑配置弹窗状态（两栏编辑草稿）
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [editingBlock, setEditingBlock] = useState<Block | null>(null);
+    const [editInitialConfig, setEditInitialConfig] = useState<Partial<RequestPanelConfig> | undefined>(undefined);
+    const [editDraftBlock, setEditDraftBlock] = useState<Block | null>(null);
 
     // 基于数据源渲染下拉菜单项
     const dataSourceMenuItems = useMemo<MenuProps['items']>(() => {
@@ -190,6 +196,45 @@ const App: React.FC = () => {
         setBlocks(prev => prev.filter(block => block.id !== blockId));
     };
 
+    // 新增：打开配置弹窗（读取当前配置，构造草稿块用于两栏预览编辑）
+    const handleOpenEditModal = (blockId: string) => {
+        const target = blocks.find(b => b.id === blockId) || null;
+        if (!target) return;
+        const currentCfg: Partial<RequestPanelConfig> | undefined = target.requestPanelRef?.current?.getCurrentConfig?.();
+        setEditingBlock(target);
+        setEditInitialConfig(currentCfg);
+        // 基于当前块创建一个草稿块（独立的请求面板与响应/显示）
+        const draft: Block = {
+            id: `edit-${target.id}-${Date.now()}`,
+            type: 'api-request',
+            title: target.title,
+            response: target.response || null,
+            displayComponent: null,
+            requestPanelRef: React.createRef(),
+            currentPagination: target.currentPagination || { current: 1, pageSize: 10, total: 0, totalPages: 0 },
+            displayOnly: false,
+            initialConfig: currentCfg,
+        };
+        setEditDraftBlock(draft);
+        setIsEditModalOpen(true);
+    };
+
+    // 新增：应用配置到隐藏请求面板
+    const handleApplyEditConfig = () => {
+        if (!editingBlock) return;
+        const cfg: Partial<RequestPanelConfig> | undefined = editDraftBlock?.requestPanelRef?.current?.getCurrentConfig?.() || editInitialConfig;
+        if (cfg && editingBlock.requestPanelRef?.current) {
+            editingBlock.requestPanelRef.current.setConfig?.(cfg);
+            editingBlock.requestPanelRef.current.triggerRequest?.();
+            setBlocks(prev => prev.map(b => b.id === editingBlock.id ? { ...b, initialConfig: { ...(b.initialConfig || {}), ...cfg } } : b));
+        }
+        // 清理并关闭
+        setIsEditModalOpen(false);
+        setEditingBlock(null);
+        setEditInitialConfig(undefined);
+        setEditDraftBlock(null);
+    };
+
     const handleResponse = (blockId: string, responseData: ResponseData) => {
         setBlocks(prev => prev.map(block =>
             block.id === blockId
@@ -247,13 +292,24 @@ const App: React.FC = () => {
                         style={{ marginBottom: '24px' }}
                         title={block.title}
                         extra={
-                            <Button
-                                type="text"
-                                danger
-                                onClick={() => handleRemoveBlock(block.id)}
-                            >
-                                ×
-                            </Button>
+                            <>
+                                <Button
+                                    type="default"
+                                    size="small"
+                                    icon={<SettingOutlined />}
+                                    style={{ marginRight: 8 }}
+                                    onClick={() => handleOpenEditModal(block.id)}
+                                >
+                                    配置
+                                </Button>
+                                <Button
+                                    type="text"
+                                    danger
+                                    onClick={() => handleRemoveBlock(block.id)}
+                                >
+                                    ×
+                                </Button>
+                            </>
                         }
                     >
                         {/* displayOnly: 只展示 UI 表格 */}
@@ -360,6 +416,63 @@ const App: React.FC = () => {
                     </div>
                 )}
             </Content>
+
+            {/* 新增：编辑配置弹窗（两栏预览） */}
+            <Modal
+                title="配置请求"
+                open={isEditModalOpen}
+                width="90%"
+                onCancel={() => { setIsEditModalOpen(false); setEditingBlock(null); setEditInitialConfig(undefined); setEditDraftBlock(null); }}
+                footer={[
+                    <Button key="cancel" onClick={() => { setIsEditModalOpen(false); setEditingBlock(null); setEditInitialConfig(undefined); setEditDraftBlock(null); }}>取消</Button>,
+                    <Button key="apply" type="primary" onClick={handleApplyEditConfig}>保存并应用</Button>,
+                ]}
+                destroyOnClose
+            >
+                {editDraftBlock && (
+                    <Row gutter={24}>
+                        <Col span={12}>
+                            <div>
+                                <ApiRequestPanel
+                                    ref={editDraftBlock.requestPanelRef}
+                                    blockId={editDraftBlock.id}
+                                    onResponse={(response) => {
+                                        // 草稿响应仅用于右侧预览
+                                        setEditDraftBlock(prev => prev && prev.id === editDraftBlock.id ? { ...prev, response } : prev);
+                                    }}
+                                    currentPagination={editDraftBlock.currentPagination}
+                                    initialConfig={editInitialConfig}
+                                />
+                                {editDraftBlock.response && (
+                                    <div style={{ marginTop: 24 }}>
+                                        <ApiResponsePanel
+                                            blockId={editDraftBlock.id}
+                                            response={editDraftBlock.response}
+                                            onDisplayUI={(displayData: React.ReactNode) => {
+                                                setEditDraftBlock(prev => prev && prev.id === editDraftBlock.id ? { ...prev, displayComponent: displayData } : prev);
+                                            }}
+                                            onPaginationChange={(pagination) => {
+                                                setEditDraftBlock(prev => prev ? { ...prev, currentPagination: { ...(prev.currentPagination || { current: 1, pageSize: 10, total: 0 }), ...pagination } } : prev);
+                                            }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </Col>
+                        <Col span={12}>
+                            <Card title="UI Display" style={{ minHeight: 400 }}>
+                                {editDraftBlock.displayComponent ? (
+                                    editDraftBlock.displayComponent
+                                ) : (
+                                    <div style={{ textAlign: 'center', color: '#999' }}>
+                                        <p>Send a request and click "Display on UI" to render components here</p>
+                                    </div>
+                                )}
+                            </Card>
+                        </Col>
+                    </Row>
+                )}
+            </Modal>
 
             {/* 新增：创建 Block 的弹窗，左侧请求+响应，右侧 UI Display */}
             <Modal
