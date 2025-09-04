@@ -122,8 +122,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     total: 'total',
     totalPages: 'totalPages',
     location: 'params',
-    // 默认：接口分页
-    pagingMode: 'api',
+    pagingMode: 'noco',
     enabledFields: {
       currentPage: true,
       pageSize: true,
@@ -306,8 +305,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     // 仅在完成初始配置应用后，且不处于自动运行阶段时触发
     if (!hasAppliedInitialConfig || shouldAutoRun) return;
     if (!url.trim()) return;
-    // NocoBase 分页：不因分页变化而触发请求
-    if (paginationMapping.pagingMode === 'noco') return;
+
+    const isNoco = (paginationMapping.pagingMode || 'api') === 'noco';
 
     // 若首次进入，记录当前分页但不触发请求，避免与 shouldAutoRun 的一次请求重复
     if (prevPaginationRef.current === null) {
@@ -329,17 +328,19 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       prevPaginationRef.current = { current: curr.current, pageSize: curr.pageSize };
     }
 
-    if (currentPagination && (paginationMapping.enabledFields.currentPage || paginationMapping.enabledFields.pageSize)) {
-      const pagination = { 
-        current: currentPagination.current, 
-        pageSize: currentPagination.pageSize 
+    // API 分页：写入请求参数后再请求；NocoBase：不写参数也请求
+    if (!isNoco && currentPagination && (paginationMapping.enabledFields.currentPage || paginationMapping.enabledFields.pageSize)) {
+      const pagination = {
+        current: currentPagination.current,
+        pageSize: currentPagination.pageSize,
       };
       updatePaginationParams(pagination);
-      const timer = setTimeout(() => {
-        handleRequest();
-      }, 100);
-      return () => clearTimeout(timer);
     }
+
+    const timer = setTimeout(() => {
+      handleRequest();
+    }, 100);
+    return () => clearTimeout(timer);
   }, [currentPagination?.current, currentPagination?.pageSize, hasAppliedInitialConfig, shouldAutoRun, url, paginationMapping.enabledFields.currentPage, paginationMapping.enabledFields.pageSize, paginationMapping.pagingMode]);
 
   // 添加变量
@@ -511,6 +512,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     setLoading(true);
 
     try {
+      const isNoco = (paginationMapping.pagingMode || 'api') === 'noco';
+
       // 构建请求配置
       const config: any = {
         method: method.toLowerCase(),
@@ -526,25 +529,79 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
           config.headers[h.name] = h.value;
         });
 
-      // 添加启用的查询参数
+      // 基于当前映射与模式，构建有效的 Query Params
+      const effectiveParams: Record<string, any> = {};
       queryParams
-        .filter(p => p.enabled && p.name.trim() && p.value.trim())
+        .filter(p => p.enabled && p.name.trim())
         .forEach(p => {
-          config.params[p.name] = p.value;
+          effectiveParams[p.name] = p.value;
         });
+
+      const stripKeys: string[] = [];
+      if (paginationMapping.currentPage) stripKeys.push(paginationMapping.currentPage);
+      if (paginationMapping.pageSize) stripKeys.push(paginationMapping.pageSize);
+
+      if (isNoco) {
+        // NocoBase 分页：剔除分页相关参数
+        stripKeys.forEach(k => { if (k in effectiveParams) delete effectiveParams[k]; });
+      } else {
+        // API 分页：将分页写入到 params（当映射位置为 params 且启用）
+        if (paginationMapping.location === 'params') {
+          if (paginationMapping.enabledFields.currentPage && paginationMapping.currentPage) {
+            effectiveParams[paginationMapping.currentPage] = getMappedValue(paginationMapping.valueSources.currentPage);
+          }
+          if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
+            effectiveParams[paginationMapping.pageSize] = getMappedValue(paginationMapping.valueSources.pageSize);
+          }
+        } else {
+          // 当写入位置为 body 时，确保 params 不携带分页字段（若之前存在则移除）
+          stripKeys.forEach(k => { if (k in effectiveParams) delete effectiveParams[k]; });
+        }
+      }
+
+      config.params = effectiveParams;
 
       // 添加请求体（如果不是 GET 方法）
       if (method !== 'GET' && body.trim()) {
         if (bodyType === 'json') {
           try {
-            config.data = JSON.parse(body);
+            let bodyObj = body ? JSON.parse(body) : {};
+
+            if (isNoco) {
+              // NocoBase 分页：从 body 中剔除分页字段
+              stripKeys.forEach(k => { if (k in bodyObj) delete bodyObj[k]; });
+            } else if (paginationMapping.location === 'body') {
+              // API 分页：将分页写入到 body（仅在映射位置为 body 且启用）
+              if (paginationMapping.enabledFields.currentPage && paginationMapping.currentPage) {
+                bodyObj[paginationMapping.currentPage] = Number(getMappedValue(paginationMapping.valueSources.currentPage));
+              }
+              if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
+                bodyObj[paginationMapping.pageSize] = Number(getMappedValue(paginationMapping.valueSources.pageSize));
+              }
+            }
+
+            config.data = bodyObj;
             config.headers['Content-Type'] = 'application/json';
           } catch (e) {
             console.error('Invalid JSON format');
             return;
           }
         } else {
+          // 其他 body 类型：不做分页参数注入/移除
           config.data = body;
+        }
+      } else if (method !== 'GET' && !body.trim() && !isNoco && paginationMapping.location === 'body') {
+        // 当需要将分页写入 body 且当前无 body 时，可按需生成最小 body
+        const minimalBody: any = {};
+        if (paginationMapping.enabledFields.currentPage && paginationMapping.currentPage) {
+          minimalBody[paginationMapping.currentPage] = Number(getMappedValue(paginationMapping.valueSources.currentPage));
+        }
+        if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
+          minimalBody[paginationMapping.pageSize] = Number(getMappedValue(paginationMapping.valueSources.pageSize));
+        }
+        if (Object.keys(minimalBody).length > 0) {
+          config.data = minimalBody;
+          config.headers['Content-Type'] = 'application/json';
         }
       }
 
@@ -815,7 +872,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
             <Select
               size="small"
               style={{ width: 200, marginLeft: 8 }}
-              value={paginationMapping.pagingMode || 'api'}
+              value={paginationMapping.pagingMode || 'noco'}
               onChange={(v) => updatePaginationMapping('pagingMode', v)}
             >
               <Option value="noco">使用 NocoBase 分页</Option>

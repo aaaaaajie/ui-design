@@ -6,6 +6,7 @@ import ApiRequestPanel from './ApiRequestPanel';
 import ApiResponsePanel from './ApiResponsePanel';
 // 新增：类型导入，便于在 Block 中声明 initialConfig 类型
 import type { RequestPanelConfig } from './ApiRequestPanel';
+import { ReloadOutlined } from '@ant-design/icons';
 
 const { Content } = Layout;
 
@@ -196,6 +197,17 @@ const App: React.FC = () => {
         setBlocks(prev => prev.filter(block => block.id !== blockId));
     };
 
+    // 新增：手动刷新当前区块（基于其当前配置重新请求）
+    const handleRefreshBlock = (blockId: string) => {
+        const target = blocks.find(b => b.id === blockId);
+        const ref = target?.requestPanelRef?.current;
+        if (ref?.triggerRequest) {
+            ref.triggerRequest();
+        } else {
+            message.warning('请求面板未就绪');
+        }
+    };
+
     // 新增：打开配置弹窗（读取当前配置，构造草稿块用于两栏预览编辑）
     const handleOpenEditModal = (blockId: string) => {
         const target = blocks.find(b => b.id === blockId) || null;
@@ -302,6 +314,16 @@ const App: React.FC = () => {
                                 >
                                     配置
                                 </Button>
+                                {/* 新增：刷新按钮 */}
+                                <Button
+                                    type="default"
+                                    size="small"
+                                    icon={<ReloadOutlined />}
+                                    style={{ marginRight: 8 }}
+                                    onClick={() => handleRefreshBlock(block.id)}
+                                >
+                                    刷新
+                                </Button>
                                 <Button
                                     type="text"
                                     danger
@@ -340,12 +362,6 @@ const App: React.FC = () => {
                                             response={block.response}
                                             onDisplayUI={(displayData: React.ReactNode) => handleDisplayUI(block.id, displayData)}
                                             onPaginationChange={(pagination) => handlePaginationChange(block.id, pagination)}
-                                            onTriggerRequest={() => {
-                                                const ref = block.requestPanelRef?.current;
-                                                if (ref?.triggerRequest) {
-                                                    ref.triggerRequest();
-                                                }
-                                            }}
                                         />
                                     )}
                                 </div>
