@@ -1,4 +1,4 @@
-import { useState, useImperativeHandle, forwardRef } from 'react';
+import { useState, useImperativeHandle, forwardRef, useEffect } from 'react';
 import {
   Input,
   Select,
@@ -31,6 +31,9 @@ interface QueryParam {
   enabled: boolean;
 }
 
+// 新增：字段来源类型
+type PaginationSourceKey = 'currentPage' | 'pageSize' | 'total' | 'totalPages';
+
 interface PaginationMapping {
   currentPage: string;
   pageSize: string;
@@ -43,6 +46,13 @@ interface PaginationMapping {
     total: boolean;
     totalPages: boolean;
   };
+  // 新增：每个字段所绑定的内置变量
+  valueSources: {
+    currentPage: PaginationSourceKey;
+    pageSize: PaginationSourceKey;
+    total: PaginationSourceKey;
+    totalPages: PaginationSourceKey;
+  };
 }
 
 interface Variable {
@@ -51,6 +61,7 @@ interface Variable {
   value: string;
   type: string;
   source: string; // 来源字段路径
+  isBuiltIn?: boolean; // 标识是否为内置变量
 }
 
 interface ApiRequestPanelProps {
@@ -58,9 +69,15 @@ interface ApiRequestPanelProps {
   onResponse?: (response: any) => void;
   onPaginationChange?: (pagination: any) => void;
   onVariableCreate?: (variable: Variable) => void;
+  currentPagination?: {
+    current: number;
+    pageSize: number;
+    total: number;
+    totalPages?: number;
+  };
 }
 
-const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onPaginationChange, onVariableCreate }, ref) => {
+const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onPaginationChange, onVariableCreate, currentPagination }, ref) => {
   const [method, setMethod] = useState<string>('GET');
   const [url, setUrl] = useState<string>('http://localhost:3005/api/users');
   const [headers, setHeaders] = useState<Header[]>([
@@ -75,18 +92,155 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   const [transformer, setTransformer] = useState<string>('data.users');
   const [variables, setVariables] = useState<Variable[]>([]);
   const [paginationMapping, setPaginationMapping] = useState<PaginationMapping>({
-    currentPage: 'data.currentPage',
-    pageSize: 'data.pageSize',
-    total: 'data.totalCount',
-    totalPages: 'data.totalPages',
+    currentPage: 'page',
+    pageSize: 'pageSize',
+    total: 'total',
+    totalPages: 'totalPages',
     location: 'params',
     enabledFields: {
       currentPage: true,
       pageSize: true,
       total: true,
       totalPages: true,
+    },
+    valueSources: {
+      currentPage: 'currentPage',
+      pageSize: 'pageSize',
+      total: 'total',
+      totalPages: 'totalPages',
     }
   });
+  
+  // 内置分页变量
+  const getBuiltInVariables = (): Variable[] => {
+    const pagination = currentPagination || { current: 1, pageSize: 10, total: 0, totalPages: 0 };
+    const totalPages = pagination.totalPages || Math.ceil((pagination.total || 0) / (pagination.pageSize || 1));
+    
+    return [
+      {
+        key: 'builtin-current-page',
+        name: 'currentPage',
+        value: pagination.current.toString(),
+        type: 'number',
+        source: 'UI Display Pagination',
+        isBuiltIn: true,
+      },
+      {
+        key: 'builtin-page-size',
+        name: 'pageSize',
+        value: pagination.pageSize.toString(),
+        type: 'number',
+        source: 'UI Display Pagination',
+        isBuiltIn: true,
+      },
+      {
+        key: 'builtin-total',
+        name: 'total',
+        value: (pagination.total ?? 0).toString(),
+        type: 'number',
+        source: 'UI Display Pagination',
+        isBuiltIn: true,
+      },
+      {
+        key: 'builtin-total-pages',
+        name: 'totalPages',
+        value: (totalPages || 0).toString(),
+        type: 'number',
+        source: 'UI Display Pagination',
+        isBuiltIn: true,
+      },
+    ];
+  };
+
+  // 内部方法：根据映射获取字段值（来自内置变量）
+  const getMappedValue = (sourceKey: PaginationSourceKey): string => {
+    const vars = getBuiltInVariables();
+    const map: Record<string, Variable> = vars.reduce((acc, v) => {
+      acc[v.name] = v;
+      return acc;
+    }, {} as Record<string, Variable>);
+    return map[sourceKey]?.value ?? '';
+  };
+
+  // 内部方法：更新分页参数（写入 params 或 body）
+  const updatePaginationParams = (_pagination: { current: number; pageSize: number }) => {
+    // 仅当有需要同步的字段时执行
+    if (!paginationMapping.enabledFields.currentPage && !paginationMapping.enabledFields.pageSize) {
+      return;
+    }
+
+    if (paginationMapping.location === 'params') {
+      // 更新查询参数
+      const newParams = [...queryParams];
+
+      // 当前页
+      if (paginationMapping.enabledFields.currentPage && paginationMapping.currentPage) {
+        const value = getMappedValue(paginationMapping.valueSources.currentPage);
+        const existing = newParams.find(p => p.name === paginationMapping.currentPage);
+        if (existing) {
+          existing.value = value;
+        } else {
+          newParams.push({
+            key: Date.now().toString(),
+            name: paginationMapping.currentPage,
+            value,
+            enabled: true,
+          });
+        }
+      }
+
+      // 每页条数
+      if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
+        const value = getMappedValue(paginationMapping.valueSources.pageSize);
+        const existing = newParams.find(p => p.name === paginationMapping.pageSize);
+        if (existing) {
+          existing.value = value;
+        } else {
+          newParams.push({
+            key: (Date.now() + 1).toString(),
+            name: paginationMapping.pageSize,
+            value,
+            enabled: true,
+          });
+        }
+      }
+
+      setQueryParams(newParams);
+    } else if (paginationMapping.location === 'body') {
+      // 更新请求体
+      try {
+        const bodyObj = body ? JSON.parse(body) : {};
+
+        if (paginationMapping.enabledFields.currentPage && paginationMapping.currentPage) {
+          bodyObj[paginationMapping.currentPage] = Number(getMappedValue(paginationMapping.valueSources.currentPage));
+        }
+        if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
+          bodyObj[paginationMapping.pageSize] = Number(getMappedValue(paginationMapping.valueSources.pageSize));
+        }
+
+        setBody(JSON.stringify(bodyObj, null, 2));
+      } catch (e) {
+        console.error('Failed to update body with pagination params:', e);
+      }
+    }
+  };
+
+  // 监听分页变化，自动更新参数并执行请求
+  useEffect(() => {
+    if (currentPagination && url.trim()) {
+      if (paginationMapping.enabledFields.currentPage || paginationMapping.enabledFields.pageSize) {
+        const pagination = { 
+          current: currentPagination.current, 
+          pageSize: currentPagination.pageSize 
+        };
+        updatePaginationParams(pagination);
+        const timer = setTimeout(() => {
+          handleRequest();
+        }, 100);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [currentPagination?.current, currentPagination?.pageSize]);
 
   // 添加变量
   const addVariable = (variableData: Omit<Variable, 'key'>) => {
@@ -115,61 +269,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   // 暴露给父组件的方法
   useImperativeHandle(ref, () => ({
     updatePaginationParams: (pagination: { current: number; pageSize: number }) => {
-      if (!paginationMapping.enabledFields.currentPage && !paginationMapping.enabledFields.pageSize) {
-        return;
-      }
-
-      if (paginationMapping.location === 'params') {
-        // 更新查询参数
-        const newParams = [...queryParams];
-
-        if (paginationMapping.enabledFields.currentPage && paginationMapping.currentPage) {
-          const existingPageParam = newParams.find(p => p.name === paginationMapping.currentPage);
-          if (existingPageParam) {
-            existingPageParam.value = pagination.current.toString();
-          } else {
-            newParams.push({
-              key: Date.now().toString(),
-              name: paginationMapping.currentPage,
-              value: pagination.current.toString(),
-              enabled: true
-            });
-          }
-        }
-
-        if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
-          const existingPageSizeParam = newParams.find(p => p.name === paginationMapping.pageSize);
-          if (existingPageSizeParam) {
-            existingPageSizeParam.value = pagination.pageSize.toString();
-          } else {
-            newParams.push({
-              key: Date.now().toString() + '1',
-              name: paginationMapping.pageSize,
-              value: pagination.pageSize.toString(),
-              enabled: true
-            });
-          }
-        }
-
-        setQueryParams(newParams);
-      } else if (paginationMapping.location === 'body') {
-        // 更新请求体
-        try {
-          const bodyObj = body ? JSON.parse(body) : {};
-
-          if (paginationMapping.enabledFields.currentPage && paginationMapping.currentPage) {
-            bodyObj[paginationMapping.currentPage] = pagination.current;
-          }
-
-          if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
-            bodyObj[paginationMapping.pageSize] = pagination.pageSize;
-          }
-
-          setBody(JSON.stringify(bodyObj, null, 2));
-        } catch (e) {
-          console.error('Failed to update body with pagination params:', e);
-        }
-      }
+      updatePaginationParams(pagination);
     },
     triggerRequest: () => {
       handleRequest();
@@ -215,26 +315,42 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     ));
   };
 
-  // 更新分页映射配置
+  // 更新分页映射配置（整体属性，如 location 或单个字段名）
   const updatePaginationMapping = (field: keyof PaginationMapping, value: any) => {
-    const newMapping = { ...paginationMapping, [field]: value };
+    const newMapping = { ...paginationMapping, [field]: value } as PaginationMapping;
     setPaginationMapping(newMapping);
     if (onPaginationChange) {
       onPaginationChange(newMapping);
     }
   };
 
+  // 已有：更新是否启用及对应字段名
   const updatePaginationField = (fieldName: keyof PaginationMapping['enabledFields'], enabled: boolean, mappingField?: string) => {
-    const newMapping = {
+    const newMapping: PaginationMapping = {
       ...paginationMapping,
       enabledFields: {
         ...paginationMapping.enabledFields,
         [fieldName]: enabled
       }
-    };
+    } as PaginationMapping;
     if (mappingField !== undefined) {
-      newMapping[fieldName as keyof Omit<PaginationMapping, 'location' | 'enabledFields'>] = mappingField;
+      (newMapping as any)[fieldName] = mappingField;
     }
+    setPaginationMapping(newMapping);
+    if (onPaginationChange) {
+      onPaginationChange(newMapping);
+    }
+  };
+
+  // 新增：更新字段的内置变量绑定
+  const updatePaginationValueSource = (fieldName: keyof PaginationMapping['valueSources'], source: PaginationSourceKey) => {
+    const newMapping: PaginationMapping = {
+      ...paginationMapping,
+      valueSources: {
+        ...paginationMapping.valueSources,
+        [fieldName]: source,
+      },
+    };
     setPaginationMapping(newMapping);
     if (onPaginationChange) {
       onPaginationChange(newMapping);
@@ -548,16 +664,16 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       label: 'Pagination',
       children: (
         <div>
-          <div style={{ marginBottom: '16px' }}>
-            <Text type="secondary">Map response fields to pagination parameters</Text>
+          <div style={{ marginBottom: '12px' }}>
+            <Text type="secondary">为请求端分页建立映射：左侧填写请求需要的参数名，右侧选择绑定的系统内置变量。</Text>
           </div>
 
           <div style={{ marginBottom: '16px' }}>
-            <Text strong>Parameter Location:</Text>
+            <Text strong>参数写入位置:</Text>
             <Select
               value={paginationMapping.location}
               onChange={(value) => updatePaginationMapping('location', value)}
-              style={{ width: '120px', marginLeft: '8px' }}
+              style={{ width: 140, marginLeft: 8 }}
               size="small"
             >
               <Option value="params">Query Params</Option>
@@ -565,100 +681,56 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
             </Select>
           </div>
 
-          <div style={{ display: 'grid', gap: '12px' }}>
-            <Row gutter={8} align="middle">
-              <Col span={4}>
-                <Switch
-                  size="small"
-                  checked={paginationMapping.enabledFields.currentPage}
-                  onChange={(checked) => updatePaginationField('currentPage', checked)}
-                />
-              </Col>
-              <Col span={8}>
-                <Text>Current Page:</Text>
-              </Col>
-              <Col span={12}>
-                <Input
-                  placeholder="page"
-                  value={paginationMapping.currentPage}
-                  onChange={(e) => updatePaginationField('currentPage', true, e.target.value)}
-                  size="small"
-                  disabled={!paginationMapping.enabledFields.currentPage}
-                />
-              </Col>
-            </Row>
+          {
+            // 两列表格：请求参数名、绑定内置变量
+          }
+          <Table
+            size="small"
+            pagination={false}
+            rowKey={(record: any) => record.key}
+            columns={[
+              {
+                title: '请求参数名',
+                dataIndex: 'param',
+                render: (_: any, record: any) => (
+                  <Input
+                    placeholder={record.placeholder}
+                    value={(paginationMapping as any)[record.mappingKey]}
+                    onChange={(e) => updatePaginationField(record.mappingKey as keyof PaginationMapping['enabledFields'], true, e.target.value)}
+                    size="small"
+                  />
+                ),
+              },
+              {
+                title: '绑定内置变量',
+                dataIndex: 'source',
+                render: (_: any, record: any) => {
+                  const vars = getBuiltInVariables();
+                  return (
+                    <Select
+                      size="small"
+                      style={{ width: '100%' }}
+                      value={(paginationMapping.valueSources as any)[record.mappingKey]}
+                      onChange={(val: PaginationSourceKey) => updatePaginationValueSource(record.mappingKey as keyof PaginationMapping['valueSources'], val)}
+                      options={vars.map(v => ({
+                        label: `${v.name}`,
+                        value: v.name as PaginationSourceKey,
+                      }))}
+                    />
+                  );
+                },
+              },
+            ]}
+            dataSource={[
+              { key: 'currentPage', label: '当前页', mappingKey: 'currentPage', placeholder: '如 page' },
+              { key: 'pageSize', label: '条数', mappingKey: 'pageSize', placeholder: '如 limit 或 pageSize' },
+            ]}
+          />
 
-            <Row gutter={8} align="middle">
-              <Col span={4}>
-                <Switch
-                  size="small"
-                  checked={paginationMapping.enabledFields.pageSize}
-                  onChange={(checked) => updatePaginationField('pageSize', checked)}
-                />
-              </Col>
-              <Col span={8}>
-                <Text>Page Size:</Text>
-              </Col>
-              <Col span={12}>
-                <Input
-                  placeholder="pageSize"
-                  value={paginationMapping.pageSize}
-                  onChange={(e) => updatePaginationField('pageSize', true, e.target.value)}
-                  size="small"
-                  disabled={!paginationMapping.enabledFields.pageSize}
-                />
-              </Col>
-            </Row>
-
-            <Row gutter={8} align="middle">
-              <Col span={4}>
-                <Switch
-                  size="small"
-                  checked={paginationMapping.enabledFields.total}
-                  onChange={(checked) => updatePaginationField('total', checked)}
-                />
-              </Col>
-              <Col span={8}>
-                <Text>Total Records:</Text>
-              </Col>
-              <Col span={12}>
-                <Input
-                  placeholder="total"
-                  value={paginationMapping.total}
-                  onChange={(e) => updatePaginationField('total', true, e.target.value)}
-                  size="small"
-                  disabled={!paginationMapping.enabledFields.total}
-                />
-              </Col>
-            </Row>
-
-            <Row gutter={8} align="middle">
-              <Col span={4}>
-                <Switch
-                  size="small"
-                  checked={paginationMapping.enabledFields.totalPages}
-                  onChange={(checked) => updatePaginationField('totalPages', checked)}
-                />
-              </Col>
-              <Col span={8}>
-                <Text>Total Pages:</Text>
-              </Col>
-              <Col span={12}>
-                <Input
-                  placeholder="totalPages"
-                  value={paginationMapping.totalPages}
-                  onChange={(e) => updatePaginationField('totalPages', true, e.target.value)}
-                  size="small"
-                  disabled={!paginationMapping.enabledFields.totalPages}
-                />
-              </Col>
-            </Row>
-          </div>
-
-          <div style={{ background: '#f5f5f5', padding: '8px', borderRadius: '4px', marginTop: '16px' }}>
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              Configure how pagination data from the response maps to request parameters.
-              When enabled, the table pagination will automatically sync with these fields.
+          <div style={{ background: '#f5f5f5', padding: 8, borderRadius: 4, marginTop: 16 }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              当右侧表格分页变化时（页码/条数），会根据上面的映射自动写入到 {paginationMapping.location === 'params' ? 'Query Params' : 'Request Body'}。
+              例如：如果条数字段名填为 <code>limit</code> 且绑定到内置 <code>pageSize</code>，切换每页条数时会自动设置 <code>limit</code>。
             </Text>
           </div>
         </div>
@@ -670,55 +742,33 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       children: (
         <div>
           <div style={{ marginBottom: '16px' }}>
-            <Text type="secondary">Manage variables created from response schema</Text>
+            <Text type="secondary">Built-in pagination variables and custom variables</Text>
           </div>
-          
-          {variables.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-              <Text>No variables yet. Create variables from the response schema in the right panel.</Text>
-            </div>
-          ) : (
+          <div style={{ marginBottom: '24px' }}>
+            <Title level={5} style={{ fontSize: '14px', marginBottom: '12px', color: '#1890ff' }}>
+              Built-in Pagination Variables
+            </Title>
             <Table
               columns={[
                 {
                   title: 'Name',
                   dataIndex: 'name',
-                  render: (name: string, record: Variable) => (
-                    <Input
-                      value={name}
-                      onChange={(e) => updateVariable(record.key, 'name', e.target.value)}
-                      placeholder="Variable name"
-                      size="small"
-                    />
+                  render: (name: string) => (
+                    <Text strong style={{ color: '#1890ff' }}>{name}</Text>
                   ),
                 },
                 {
                   title: 'Value',
                   dataIndex: 'value',
-                  render: (value: string, record: Variable) => (
-                    <Input
-                      value={value}
-                      onChange={(e) => updateVariable(record.key, 'value', e.target.value)}
-                      placeholder="Variable value"
-                      size="small"
-                    />
+                  render: (value: string) => (
+                    <Text code>{value}</Text>
                   ),
                 },
                 {
                   title: 'Type',
                   dataIndex: 'type',
-                  render: (type: string, record: Variable) => (
-                    <Select
-                      value={type}
-                      onChange={(value) => updateVariable(record.key, 'type', value)}
-                      size="small"
-                      style={{ width: '100px' }}
-                    >
-                      <Option value="string">String</Option>
-                      <Option value="number">Number</Option>
-                      <Option value="boolean">Boolean</Option>
-                      <Option value="object">Object</Option>
-                    </Select>
+                  render: (type: string) => (
+                    <Text type="secondary">{type}</Text>
                   ),
                 },
                 {
@@ -728,24 +778,101 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                     <Text type="secondary" style={{ fontSize: '12px' }}>{source}</Text>
                   ),
                 },
-                {
-                  title: '',
-                  width: 50,
-                  render: (record: Variable) => (
-                    <Button
-                      type="text"
-                      icon={<DeleteOutlined />}
-                      size="small"
-                      onClick={() => removeVariable(record.key)}
-                    />
-                  ),
-                },
               ]}
-              dataSource={variables}
+              dataSource={getBuiltInVariables()}
               pagination={false}
               size="small"
+              showHeader={true}
             />
-          )}
+          </div>
+
+          {/* 用户创建的变量 */}
+          <div>
+            <Title level={5} style={{ fontSize: '14px', marginBottom: '12px' }}>
+              Custom Variables
+            </Title>
+            {variables.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#999', background: '#fafafa', borderRadius: '4px' }}>
+                <Text>No custom variables yet. Create variables from the response schema in the right panel.</Text>
+              </div>
+            ) : (
+              <Table
+                columns={[
+                  {
+                    title: 'Name',
+                    dataIndex: 'name',
+                    render: (name: string, record: Variable) => (
+                      <Input
+                        value={name}
+                        onChange={(e) => updateVariable(record.key, 'name', e.target.value)}
+                        placeholder="Variable name"
+                        size="small"
+                      />
+                    ),
+                  },
+                  {
+                    title: 'Value',
+                    dataIndex: 'value',
+                    render: (value: string, record: Variable) => (
+                      <Input
+                        value={value}
+                        onChange={(e) => updateVariable(record.key, 'value', e.target.value)}
+                        placeholder="Variable value"
+                        size="small"
+                      />
+                    ),
+                  },
+                  {
+                    title: 'Type',
+                    dataIndex: 'type',
+                    render: (type: string, record: Variable) => (
+                      <Select
+                        value={type}
+                        onChange={(value) => updateVariable(record.key, 'type', value)}
+                        size="small"
+                        style={{ width: '100px' }}
+                      >
+                        <Option value="string">String</Option>
+                        <Option value="number">Number</Option>
+                        <Option value="boolean">Boolean</Option>
+                        <Option value="object">Object</Option>
+                      </Select>
+                    ),
+                  },
+                  {
+                    title: 'Source',
+                    dataIndex: 'source',
+                    render: (source: string) => (
+                      <Text type="secondary" style={{ fontSize: '12px' }}>{source}</Text>
+                    ),
+                  },
+                  {
+                    title: '',
+                    width: 50,
+                    render: (record: Variable) => (
+                      <Button
+                        type="text"
+                        icon={<DeleteOutlined />}
+                        size="small"
+                        onClick={() => removeVariable(record.key)}
+                      />
+                    ),
+                  },
+                ]}
+                dataSource={variables}
+                pagination={false}
+                size="small"
+              />
+            )}
+          </div>
+
+          <div style={{ background: '#f0f8ff', padding: '12px', borderRadius: '4px', marginTop: '16px', border: '1px solid #d6e7ff' }}>
+            <Text type="secondary" style={{ fontSize: '12px' }}>
+              <strong>Built-in variables:</strong> Automatically synced with UI Display pagination values. These variables reflect the current state of the table pagination.
+              <br />
+              <strong>Custom variables:</strong> Created from response schema analysis and can be manually edited.
+            </Text>
+          </div>
         </div>
       ),
     },
