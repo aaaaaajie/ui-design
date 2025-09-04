@@ -302,8 +302,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
 
   // 监听分页变化，自动更新参数并执行请求
   useEffect(() => {
-    // 仅在完成初始配置应用后，且不处于自动运行阶段时触发
-    if (!hasAppliedInitialConfig || shouldAutoRun) return;
+    // 仅在完成初始配置应用后触发（去掉 shouldAutoRun 阻断，避免首次配置期间分页切换无效）
+    if (!hasAppliedInitialConfig) return;
     if (!url.trim()) return;
 
     const isNoco = (paginationMapping.pagingMode || 'api') === 'noco';
@@ -341,7 +341,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       handleRequest();
     }, 100);
     return () => clearTimeout(timer);
-  }, [currentPagination?.current, currentPagination?.pageSize, hasAppliedInitialConfig, shouldAutoRun, url, paginationMapping.enabledFields.currentPage, paginationMapping.enabledFields.pageSize, paginationMapping.pagingMode]);
+  }, [currentPagination?.current, currentPagination?.pageSize, hasAppliedInitialConfig, /* shouldAutoRun removed */, url, paginationMapping.enabledFields.currentPage, paginationMapping.enabledFields.pageSize, paginationMapping.pagingMode]);
 
   // 添加变量
   const addVariable = (variableData: Omit<Variable, 'key'>) => {

@@ -347,8 +347,8 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
   }
 
   // 独立的可筛选表格视图，内部自管理筛选弹窗与条件，确保在 displayOnly 模式下也可正常交互
-  const FilterableTableView: React.FC<{ data: any; pag: { current: number; pageSize: number; showSizeChanger: boolean }; onPageChange?: (page: number, pageSize: number) => void; }>
-    = ({ data, pag, onPageChange }) => {
+  const FilterableTableView: React.FC<{ data: any; pag: { current: number; pageSize: number; showSizeChanger: boolean }; onPageChange?: (page: number, pageSize: number) => void; mode?: 'noco' | 'api'; apiTotal?: number; }>
+    = ({ data, pag, onPageChange, mode = 'api', apiTotal }) => {
       const [visible, setVisible] = useState(false);
       const [logic, setLogic] = useState<'all' | 'any'>('all');
       const [conds, setConds] = useState<Condition[]>([]);
@@ -362,7 +362,11 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
         return data;
       }, [data, conds, logic]);
 
-      const total = Array.isArray(filtered) ? filtered.length : (filtered && typeof filtered === 'object' ? 1 : 0);
+      // 本地计算总数（用于 Noco 模式或作为兜底）
+      const localTotal = Array.isArray(filtered) ? filtered.length : (filtered && typeof filtered === 'object' ? 1 : 0);
+      // 在 API 分页模式下：若从响应解析得到的 total 有效（>0），优先使用；否则回退到本地总数
+      const hasValidApiTotal = typeof apiTotal === 'number' && apiTotal > 0;
+      const total = mode === 'api' && hasValidApiTotal ? (apiTotal as number) : localTotal;
 
       const operatorOptions = [
         { label: '等于', value: 'equals' },
@@ -461,11 +465,14 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
   const renderByMode = (mode: 'table' | 'detail' | 'form', dataToUse: any): React.ReactNode => {
     switch (mode) {
       case 'table': {
+        const pagingMode: 'noco' | 'api' = (response?.paginationMapping?.pagingMode) || 'api';
         return (
           <FilterableTableView
             data={dataToUse}
             pag={{ current: pagination.current, pageSize: pagination.pageSize, showSizeChanger: pagination.showSizeChanger }}
             onPageChange={handleTablePaginationChange}
+            mode={pagingMode}
+            apiTotal={pagination.total}
           />
         );
       }
