@@ -23,6 +23,9 @@ export interface Block {
   displayOnly?: boolean;
   initialConfig?: Partial<RequestPanelConfig>;
   isPlaceholder?: boolean;
+  // 新增：Schema 选择与别名持久化
+  selectedPaths?: string[];
+  aliasMap?: Record<string, string>;
 }
 
 export interface Collection {

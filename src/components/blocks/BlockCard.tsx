@@ -15,9 +15,11 @@ interface Props {
   onResponse: (blockId: string, response: any) => void;
   onDisplayUI: (blockId: string, displayData: React.ReactNode) => void;
   onPaginationChange: (blockId: string, pagination: { current: number; pageSize: number }) => void;
+  // 新增：Schema 选择/别名变更
+  onSchemaChange?: (blockId: string, payload: { selectedPaths: string[]; aliasMap: Record<string, string> }) => void;
 }
 
-const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, onRefresh, onOpenEdit, onResponse, onDisplayUI, onPaginationChange }) => {
+const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, onRefresh, onOpenEdit, onResponse, onDisplayUI, onPaginationChange, onSchemaChange }) => {
   return (
     <Card
       key={block.id}
@@ -93,6 +95,10 @@ const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, 
                   response={block.response}
                   onDisplayUI={(displayData: React.ReactNode) => onDisplayUI(block.id, displayData)}
                   onPaginationChange={(pagination) => onPaginationChange(block.id, pagination)}
+                  // 新增：Schema 初始值与回调
+                  initialSelectedPaths={block.selectedPaths}
+                  initialAliasMap={block.aliasMap}
+                  onSchemaChange={(payload) => onSchemaChange?.(block.id, payload)}
                 />
               )}
             </div>
@@ -115,6 +121,10 @@ const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, 
                       response={block.response}
                       onDisplayUI={(displayData: React.ReactNode) => onDisplayUI(block.id, displayData)}
                       onPaginationChange={(pagination) => onPaginationChange(block.id, pagination)}
+                      // 新增：Schema 初始值与回调
+                      initialSelectedPaths={block.selectedPaths}
+                      initialAliasMap={block.aliasMap}
+                      onSchemaChange={(payload) => onSchemaChange?.(block.id, payload)}
                     />
                   </div>
                 )}

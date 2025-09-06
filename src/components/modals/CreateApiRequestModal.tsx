@@ -63,6 +63,10 @@ const CreateApiRequestModal: React.FC<Props> = ({
                     onPaginationChange={(pagination) => {
                       setDraftBlock(prev => prev ? { ...prev, currentPagination: { ...(prev.currentPagination || { current: 1, pageSize: 10, total: 0 }), ...pagination } } : prev);
                     }}
+                    // 新增：Schema 初始值与回传
+                    initialSelectedPaths={draftBlock.selectedPaths}
+                    initialAliasMap={draftBlock.aliasMap}
+                    onSchemaChange={(payload) => setDraftBlock(prev => prev ? { ...prev, selectedPaths: payload.selectedPaths, aliasMap: payload.aliasMap } : prev)}
                   />
                 </div>
               )}

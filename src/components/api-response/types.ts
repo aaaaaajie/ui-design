@@ -39,4 +39,8 @@ export interface ApiResponsePanelProps {
   onDisplayUI?: (component: React.ReactNode) => void;
   onCreateVariable?: (variableData: { name: string; value: string; type: string; source: string }) => void;
   onPaginationChange?: (pagination: { current: number; pageSize: number }) => void;
+  // 新增：用于在外层持久化并回填 Schema 勾选与别名
+  initialSelectedPaths?: string[];
+  initialAliasMap?: Record<string, string>;
+  onSchemaChange?: (payload: { selectedPaths: string[]; aliasMap: Record<string, string> }) => void;
 }

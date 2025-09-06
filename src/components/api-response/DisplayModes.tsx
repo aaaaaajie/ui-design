@@ -1,6 +1,6 @@
 import React from 'react';
 import { Table, Descriptions, Form, Input, Button } from 'antd';
-import { generateTableColumns, normalizeToArray } from './utils';
+import { generateTableColumns, normalizeToArray, generateSelectedColumns } from './utils';
 
 export type DisplayMode = 'table' | 'detail' | 'form';
 
@@ -10,14 +10,19 @@ export default function renderByMode(
   options?: {
     tablePagination?: { current?: number; pageSize?: number; total?: number; showSizeChanger?: boolean };
     onTableChange?: (pgn: { current: number; pageSize: number }) => void;
+    selectedPaths?: string[]; // 新增：仅展示勾选的字段（按传入顺序渲染）
+    aliasMap?: Record<string, string>; // 新增：别名
   }
 ): React.ReactNode {
   const rows = normalizeToArray(rawData);
   if (mode === 'table') {
+    const columns = options?.selectedPaths && options.selectedPaths.length > 0
+      ? generateSelectedColumns(options.selectedPaths, options.aliasMap)
+      : generateTableColumns(rows);
     return (
       <Table
         size="small"
-        columns={generateTableColumns(rows)}
+        columns={columns}
         dataSource={rows}
         pagination={{
           pageSize: options?.tablePagination?.pageSize ?? 10,

@@ -1,4 +1,6 @@
-import { Table, Tag, Typography, Dropdown, Button } from 'antd';
+import React from 'react';
+import { Table, Tag, Typography, Checkbox, Input } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 
 const { Text } = Typography;
 
@@ -8,103 +10,142 @@ export interface SchemaRow {
   type: string;
   value: any;
   path: string;
+  children?: SchemaRow[];
 }
 
 export default function SchemaTable({
   schema,
   hoveredKey,
   setHoveredKey,
-  onCreateVariable,
-  onExtract,
+  selectedPaths,
+  onTogglePath,
+  aliasMap,
+  onAliasChange,
 }: {
   schema: SchemaRow[];
   hoveredKey: string | null;
   setHoveredKey: (k: string | null) => void;
-  onCreateVariable: (record: SchemaRow) => void;
-  onExtract: (record: SchemaRow) => void;
+  selectedPaths: string[];
+  onTogglePath: (path: string, checked: boolean) => void;
+  aliasMap: Record<string, string>;
+  onAliasChange: (path: string, alias: string) => void;
 }) {
+  // 构造树形数据：顶层 schema 行 + 子属性行
+  const treeData = React.useMemo(() => {
+    return schema.map((rec) => {
+      if (rec.type !== 'array' && rec.type !== 'object') return rec;
+      let childEntries: SchemaRow[] = [];
+      try {
+        const parsed = (() => {
+          if (typeof rec.value === 'string') {
+            try {
+              return JSON.parse(rec.value);
+            } catch {
+              return rec.value;
+            }
+          }
+          return rec.value;
+        })();
+        const sample = Array.isArray(parsed) ? parsed[0] : parsed;
+        if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
+          childEntries = Object.entries(sample).map(([k, v], i) => ({
+            key: `${rec.path}.${k}-${i}`,
+            field: k,
+            type: Array.isArray(v) ? 'array' : typeof v,
+            value: v,
+            path: `${rec.path}.${k}`,
+          }));
+        }
+      } catch {}
+      return { ...rec, children: childEntries } as SchemaRow;
+    });
+  }, [schema]);
+
+  // 默认选中：所有顶层非嵌套字段（object/array 除外），子属性默认不勾选
+  React.useEffect(() => {
+    const defaults = treeData
+      .filter((r) => r.type !== 'array' && r.type !== 'object')
+      .map((r) => r.path);
+    if (defaults.length) {
+      // 将默认项并入已选，不覆盖已有选择
+      const set = new Set(selectedPaths);
+      defaults.forEach((p) => set.add(p));
+      if (set.size !== selectedPaths.length) {
+        // 只有变化时才触发 onTogglePath 多次以复用父状态逻辑
+        set.forEach((p) => {
+          if (!selectedPaths.includes(p)) onTogglePath(p, true);
+        });
+      }
+    }
+    // 仅在初次加载 schema 时触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [treeData.length]);
+
+  const columns: ColumnsType<SchemaRow> = [
+    {
+      title: 'Select',
+      dataIndex: 'select',
+      key: 'select',
+      width: 80,
+      render: (_: any, record) => (
+        <Checkbox
+          checked={selectedPaths.includes(record.path)}
+          onChange={(e) => onTogglePath(record.path, e.target.checked)}
+        />
+      ),
+    },
+    { title: 'Field', dataIndex: 'field', key: 'field', width: 150 },
+    {
+      title: 'Alias Field',
+      dataIndex: 'alias',
+      key: 'alias',
+      width: 150,
+      render: (_: any, record) => (
+        <Input
+          size="small"
+          value={aliasMap[record.path] || ''}
+          onChange={(e) => onAliasChange(record.path, e.target.value)}
+        />
+      ),
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      width: 150,
+      render: (type: string) => (
+        <Tag
+          color={
+            type === 'string'
+              ? 'blue'
+              : type === 'number'
+              ? 'green'
+              : type === 'boolean'
+              ? 'orange'
+              : type === 'object'
+              ? 'purple'
+              : type === 'array'
+              ? 'cyan'
+              : 'default'
+          }
+        >
+          {type}
+        </Tag>
+      ),
+    }
+  ];
+
   return (
     <Table
-      columns={[
-        { title: 'Field', dataIndex: 'field', key: 'field', width: 150 },
-        {
-          title: 'Type',
-          dataIndex: 'type',
-          key: 'type',
-          width: 100,
-          render: (type: string) => (
-            <Tag
-              color={
-                type === 'string'
-                  ? 'blue'
-                  : type === 'number'
-                  ? 'green'
-                  : type === 'boolean'
-                  ? 'orange'
-                  : type === 'object'
-                  ? 'purple'
-                  : type === 'array'
-                  ? 'cyan'
-                  : 'default'
-              }
-            >
-              {type}
-            </Tag>
-          ),
-        },
-        {
-          title: 'Value',
-          dataIndex: 'value',
-          key: 'value',
-          render: (value: any) => (
-            <div style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              <Text type="secondary" style={{ fontSize: '12px' }}>
-                {String(value).length > 50 ? String(value).substring(0, 50) + '...' : String(value)}
-              </Text>
-            </div>
-          ),
-        },
-        {
-          title: 'Path',
-          dataIndex: 'path',
-          key: 'path',
-          render: (path: string) => (
-            <Text type="secondary" style={{ fontSize: '12px' }}>
-              {path}
-            </Text>
-          ),
-        },
-        {
-          title: 'Action',
-          key: 'action',
-          width: 80,
-          render: (record: SchemaRow) => {
-            const menuItems = [
-              { key: 'createVar', label: '创建变量' },
-              { key: 'extract', label: '提取字段' },
-            ];
-            const onMenuClick = ({ key }: { key: string }) => {
-              if (key === 'createVar') onCreateVariable(record);
-              if (key === 'extract') onExtract(record);
-            };
-            return (
-              <div style={{ textAlign: 'right' }}>
-                {hoveredKey === record.key ? (
-                  <Dropdown placement="bottomRight" menu={{ items: menuItems, onClick: onMenuClick }}>
-                    <Button size="small" type="text">
-                      ···
-                    </Button>
-                  </Dropdown>
-                ) : null}
-              </div>
-            );
-          },
-        },
-      ]}
-      dataSource={schema}
+      columns={columns}
+      dataSource={treeData}
       pagination={{ pageSize: 10, size: 'small' }}
       size="small"
       scroll={{ x: true }}
+      expandable={{
+        defaultExpandAllRows: false,
+        rowExpandable: (rec) => rec.type === 'array' || rec.type === 'object',
+      }}
       onRow={(rec: any) => ({
         onMouseEnter: () => setHoveredKey(rec.key),
         onMouseLeave: () => {

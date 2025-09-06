@@ -58,6 +58,60 @@ export function generateTableColumns(rows: any[]): any[] {
   }));
 }
 
+// 按选中的字段路径生成列（支持对象与对象数组的子字段，如 items.productName 或 shippingAddress.province）
+export function generateSelectedColumns(paths: string[], aliasMap?: Record<string, string>): any[] {
+  const uniq = Array.from(new Set(paths.filter(Boolean)));
+  return uniq.map((fullPath) => {
+    const segments = fullPath.split('.');
+    const titleFromPath = segments[segments.length - 1] || fullPath;
+    const titleText = (aliasMap && aliasMap[fullPath]) || titleFromPath;
+    const basePath = segments.slice(0, -1).join('.');
+    const childPath = segments.slice(-1).join('.');
+
+    return {
+      title: React.createElement('span', { title: fullPath }, titleText),
+      key: fullPath,
+      dataIndex: fullPath,
+      ellipsis: true,
+      render: (_: any, row: any) => {
+        let val: any;
+        if (segments.length === 1) {
+          val = getNestedValue(row, fullPath);
+        } else {
+          const base = getNestedValue(row, basePath);
+          if (Array.isArray(base)) {
+            const first = base[0];
+            if (first && typeof first === 'object') {
+              val = getNestedValue(first, childPath);
+            } else {
+              try {
+                val = JSON.stringify(base);
+              } catch {
+                val = String(base);
+              }
+            }
+          } else if (base && typeof base === 'object') {
+            val = getNestedValue(base, childPath);
+          } else {
+            val = undefined;
+          }
+        }
+        const titleStr =
+          typeof val === 'object'
+            ? (() => {
+                try {
+                  return JSON.stringify(val);
+                } catch {
+                  return '';
+                }
+              })()
+            : String(val);
+        return React.createElement('span', { title: titleStr as string }, safeToDisplay(val));
+      },
+    };
+  });
+}
+
 export const normalizeResponsePath = (path?: string): string => {
   if (!path) return '';
   let p = String(path).trim();

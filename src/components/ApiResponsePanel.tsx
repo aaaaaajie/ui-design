@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
-import { Typography, Tabs, Descriptions, Divider, Alert, Select, message } from 'antd';
+import { Typography, Tabs, Descriptions, Divider, Alert, Select } from 'antd';
 import { TableOutlined, FileTextOutlined, FormOutlined } from '@ant-design/icons';
-import { StatusTag, SchemaTable, ExtractModal } from './api-response';
+import { StatusTag, SchemaTable } from './api-response';
 import renderByMode from './api-response/DisplayModes';
 import type { ApiResponsePanelProps, ResponseData } from './api-response/types';
-import { getNestedValue, normalizeResponsePath, toNumber, getRootFields, getChildFields } from './api-response/utils';
+import { getNestedValue, normalizeResponsePath, toNumber } from './api-response/utils';
 
 const { Title, Text } = Typography;
 
-// 生成数据字段schema
+// 生成数据字段schema（value 保存原始值，便于展开子属性）
 const generateSchema = (
   data: any,
   prefix: string = ''
@@ -26,13 +26,9 @@ const generateSchema = (
         key: `${currentPrefix}-${key}-${index}`,
         field: key,
         type: fieldType,
-        value: fieldType === 'object' ? JSON.stringify(value) : String(value),
-        path: path,
+        value, // 保留原始值
+        path,
       });
-
-      if (typeof value === 'object' && !Array.isArray(value) && value !== null) {
-        processObject(value, path);
-      }
     });
   };
 
@@ -45,17 +41,22 @@ const generateSchema = (
   return schema;
 };
 
-const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplayUI, onCreateVariable, onPaginationChange }) => {
+const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplayUI, onPaginationChange, initialSelectedPaths, initialAliasMap, onSchemaChange }) => {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0, showSizeChanger: true });
   const [displayMode, setDisplayMode] = useState<'table' | 'detail' | 'form'>('table');
   const [hoveredSchemaKey, setHoveredSchemaKey] = useState<string | null>(null);
-  const [extractModalOpen, setExtractModalOpen] = useState(false);
-  const [extractedPath, setExtractedPath] = useState<string>('');
-  const [extractBaseData, setExtractBaseData] = useState<any>(null);
-  const [rootFieldOptions, setRootFieldOptions] = useState<string[]>([]);
-  const [childFieldOptions, setChildFieldOptions] = useState<string[]>([]);
-  const [selectedRootFields, setSelectedRootFields] = useState<string[]>([]);
-  const [selectedChildFields, setSelectedChildFields] = useState<string[]>([]);
+  // 新增：选中用于展示到 UI 的字段路径（支持 a、a.b、a.b.c 等）
+  const [selectedPaths, setSelectedPaths] = useState<string[]>(initialSelectedPaths || []);
+  // 新增：字段别名
+  const [aliasMap, setAliasMap] = useState<Record<string, string>>(initialAliasMap || {});
+
+  // 同步外部传入的初始值（当 block 切换等场景）
+  React.useEffect(() => {
+    if (initialSelectedPaths) setSelectedPaths(initialSelectedPaths);
+  }, [initialSelectedPaths]);
+  React.useEffect(() => {
+    if (initialAliasMap) setAliasMap(initialAliasMap);
+  }, [initialAliasMap]);
 
   // 从响应数据中提取分页信息（支持自定义响应字段路径）
   const extractPaginationFromResponse = (resp: ResponseData) => {
@@ -136,56 +137,6 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     setPagination(newPagination);
   };
 
-  // 新增：获取根层字段（用于外层保留）
-  // const getRootFields = (data: any): string[] => {
-  //   if (!data) return [];
-  //   const sample = Array.isArray(data) ? data[0] : data;
-  //   if (sample && typeof sample === 'object' && !Array.isArray(sample)) return Object.keys(sample);
-  //   return [];
-  // };
-
-  // 新增：获取子字段（从提取对象/数组样本）
-  // const getChildFields = (val: any): string[] => {
-  //   if (!val) return [];
-  //   if (Array.isArray(val)) {
-  //     const first = val[0];
-  //     if (first && typeof first === 'object' && !Array.isArray(first)) return Object.keys(first);
-  //     return [];
-  //   }
-  //   if (typeof val === 'object') return Object.keys(val);
-  //   return [];
-  // };
-
-  // 新增：获取子字段值（支持数组对象，取第一个元素）
-  // const getProjectedChildValue = (item: any, basePath: string, childKey: string) => {
-  //   const sub = getNestedValue(item, basePath);
-  //   if (Array.isArray(sub)) {
-  //     const first = sub[0];
-  //     if (first && typeof first === 'object') return first?.[childKey];
-  //     try { return JSON.stringify(sub); } catch { return String(sub); }
-  //   }
-  //   if (sub && typeof sub === 'object') return sub?.[childKey];
-  //   return undefined;
-  // };
-
-  // 新增：根据选择投影数据
-  // const projectSelected = (data: any, rootSel: string[], childSel: string[], path: string) => {
-  //   const makeRow = (src: any, idx: number) => {
-  //     const row: any = { key: idx };
-  //     rootSel.forEach((f) => { row[f] = getNestedValue(src, f); });
-  //     childSel.forEach((cf) => { row[`${path}.${cf}`] = getProjectedChildValue(src, path, cf); });
-  //     return row;
-  //   };
-
-  //   if (Array.isArray(data)) {
-  //     return data.map((item, idx) => (item && typeof item === 'object') ? makeRow(item, idx) : { key: idx });
-  //   }
-  //   if (data && typeof data === 'object') {
-  //     return [makeRow(data, 0)];
-  //   }
-  //   return [];
-  // };
-
   // 新增：处理显示模式切换
   const handleDisplayMode = (mode: 'table' | 'detail' | 'form') => {
     setDisplayMode(mode);
@@ -198,6 +149,8 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
           setPagination((prev) => ({ ...prev, current, pageSize }));
           onPaginationChange?.({ current, pageSize });
         },
+        selectedPaths,
+        aliasMap,
       })
     );
   };
@@ -209,7 +162,7 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
     }
   }, [response]);
 
-  // 新增：响应或分页改变时，自动将表格渲染到 UI Display（等效于自动点击“Display on UI”-> Table）
+  // 新增：响应、分页或选择字段改变时，自动将表格渲染到 UI Display
   React.useEffect(() => {
     if (!response || response.error || !onDisplayUI) return;
     const dataToUse = response.transformedData !== undefined ? response.transformedData : response.data;
@@ -220,38 +173,31 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
           setPagination((prev) => ({ ...prev, current, pageSize }));
           onPaginationChange?.({ current, pageSize });
         },
+        selectedPaths,
+        aliasMap,
       })
     );
-  }, [response, pagination.current, pagination.pageSize, displayMode]);
+  }, [response, pagination.current, pagination.pageSize, displayMode, selectedPaths, aliasMap]);
 
-  // 处理创建变量
-  const handleCreateVariable = (fieldData: { field: string; type: string; value: any; path: string }) => {
-    if (onCreateVariable) {
-      onCreateVariable({ name: fieldData.field, value: fieldData.value, type: fieldData.type, source: fieldData.path });
-      message.success('已创建变量');
-    }
+  // Schema 勾选项切换
+  const handleTogglePath = (path: string, checked: boolean) => {
+    setSelectedPaths((prev) => {
+      const set = new Set(prev);
+      if (checked) set.add(path);
+      else set.delete(path);
+      const next = Array.from(set);
+      onSchemaChange?.({ selectedPaths: next, aliasMap });
+      return next;
+    });
   };
 
-  // 新增：提取嵌套数据（增强：初始化选项与默认选择）
-  const handleExtractData = (fieldData: { field: string; type: string; value: any; path: string }) => {
-    const dataToUse = response?.transformedData !== undefined ? response?.transformedData : response?.data;
-    if (!dataToUse) return;
-
-    const value = getNestedValue(dataToUse, fieldData.path);
-    setExtractBaseData(dataToUse);
-    setExtractedPath(fieldData.path);
-
-    const roots = getRootFields(dataToUse);
-    const childs = getChildFields(value);
-
-    setRootFieldOptions(roots);
-    setChildFieldOptions(childs);
-    // 默认勾选常见 id 字段
-    setSelectedRootFields(roots.includes('id') ? ['id'] : []);
-    setSelectedChildFields([]);
-
-    setExtractModalOpen(true);
-    // 仅在进入弹窗时不主动刷新右侧 UI，等用户点击“应用到 UI”
+  // 别名变更
+  const handleAliasChange = (path: string, alias: string) => {
+    setAliasMap((prev) => {
+      const next = { ...prev, [path]: alias };
+      onSchemaChange?.({ selectedPaths, aliasMap: next });
+      return next;
+    });
   };
 
   // tab 页签
@@ -324,8 +270,10 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
                 schema={schema as any}
                 hoveredKey={hoveredSchemaKey}
                 setHoveredKey={setHoveredSchemaKey}
-                onCreateVariable={handleCreateVariable}
-                onExtract={handleExtractData}
+                selectedPaths={selectedPaths}
+                onTogglePath={handleTogglePath}
+                aliasMap={aliasMap}
+                onAliasChange={handleAliasChange}
               />
             );
           })()}
@@ -364,32 +312,6 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
       </div>
 
       <Tabs items={tabItems} size="small" />
-
-      <ExtractModal
-        open={extractModalOpen}
-        extractedPath={extractedPath}
-        extractBaseData={extractBaseData}
-        rootFieldOptions={rootFieldOptions}
-        childFieldOptions={childFieldOptions}
-        selectedRootFields={selectedRootFields}
-        selectedChildFields={selectedChildFields}
-        onChangeRootFields={(vals) => setSelectedRootFields(vals)}
-        onChangeChildFields={(vals) => setSelectedChildFields(vals)}
-        onClose={() => setExtractModalOpen(false)}
-        onApply={(full) => {
-          if (onDisplayUI)
-            onDisplayUI(
-              renderByMode('table', full, {
-                tablePagination: pagination,
-                onTableChange: ({ current, pageSize }) => {
-                  setPagination((prev) => ({ ...prev, current, pageSize }));
-                  onPaginationChange?.({ current, pageSize });
-                },
-              })
-            );
-          setExtractModalOpen(false);
-        }}
-      />
     </div>
   );
 };

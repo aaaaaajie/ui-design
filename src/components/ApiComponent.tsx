@@ -176,6 +176,13 @@ const App: React.FC = () => {
         )));
     };
 
+    // 新增：保存 Schema 勾选与别名
+    const handleSchemaChange = (blockId: string, payload: { selectedPaths: string[]; aliasMap: Record<string, string> }) => {
+        setBlocks(prev => prev.map(b => (
+            b.id === blockId ? { ...b, selectedPaths: payload.selectedPaths, aliasMap: payload.aliasMap } : b
+        )));
+    };
+
     const handleRemoveBlock = (blockId: string) => {
         setBlocks(prev => prev.filter(block => block.id !== blockId));
     };
@@ -206,6 +213,9 @@ const App: React.FC = () => {
             currentPagination: target.currentPagination || { current: 1, pageSize: 10, total: 0, totalPages: 0 },
             displayOnly: false,
             initialConfig: currentCfg,
+            // 带入当前 Schema 选择与别名，便于编辑态沿用
+            selectedPaths: target.selectedPaths,
+            aliasMap: target.aliasMap,
         };
         setEditDraftBlock(draft);
         setIsEditModalOpen(true);
@@ -240,6 +250,7 @@ const App: React.FC = () => {
                         onResponse={handleResponse}
                         onDisplayUI={handleDisplayUI}
                         onPaginationChange={handlePaginationChange}
+                        onSchemaChange={handleSchemaChange}
                     />
                 ))}
 
@@ -305,6 +316,10 @@ const App: React.FC = () => {
                                             onPaginationChange={(pagination: any) => {
                                                 setEditDraftBlock(prev => prev ? { ...prev, currentPagination: { ...(prev.currentPagination || { current: 1, pageSize: 10, total: 0 }), ...pagination } } : prev);
                                             }}
+                                            // 新增：Schema 初始值与回传
+                                            initialSelectedPaths={editDraftBlock.selectedPaths}
+                                            initialAliasMap={editDraftBlock.aliasMap}
+                                            onSchemaChange={(payload) => setEditDraftBlock(prev => prev ? { ...prev, selectedPaths: payload.selectedPaths, aliasMap: payload.aliasMap } : prev)}
                                         />
                                     </div>
                                 )}
