@@ -168,7 +168,28 @@ const App: React.FC = () => {
 
     // 顶部 Add block 菜单（仅一个）
     const addMenuItems: MenuProps['items'] = [
-        { key: 'request-api', label: 'Request API', onClick: handleAddRequestApi },
+        { key: 'group-data-blocks', label: <span style={{ color: '#9aa0a6' }}>Data blocks</span>, disabled: true },
+        {
+            key: 'table',
+            label: 'Table',
+            children: [
+                { key: 'table-request-api', label: 'Request API', onClick: handleAddRequestApi },
+            ],
+        },
+        {
+            key: 'form',
+            label: 'Form',
+            children: [
+                { key: 'form-request-api', label: 'Request API', onClick: handleAddRequestApi },
+            ],
+        },
+        {
+            key: 'detail',
+            label: 'Detail',
+            children: [
+                { key: 'detail-request-api', label: 'Request API', onClick: handleAddRequestApi },
+            ],
+        },
     ];
 
     const handleOpenCreateModal = (type: string, title: string) => {
