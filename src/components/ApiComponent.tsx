@@ -173,21 +173,27 @@ const App: React.FC = () => {
             key: 'table',
             label: 'Table',
             children: [
-                { key: 'table-request-api', label: 'Request API', onClick: handleAddRequestApi },
+                { key: 'main', label: 'Main', onClick: () => { } },
+                { type: 'divider' as const },
+                { key: 'new-request-api', label: 'New Request API', onClick: handleAddRequestApi },
             ],
         },
         {
             key: 'form',
             label: 'Form',
             children: [
-                { key: 'form-request-api', label: 'Request API', onClick: handleAddRequestApi },
+                { key: 'main', label: 'Main', onClick: () => { } },
+                { type: 'divider' as const },
+                { key: 'new-request-api', label: 'New Request API', onClick: handleAddRequestApi },
             ],
         },
         {
             key: 'detail',
             label: 'Detail',
             children: [
-                { key: 'detail-request-api', label: 'Request API', onClick: handleAddRequestApi },
+                { key: 'main', label: 'Main', onClick: () => { } },
+                { type: 'divider' as const },
+                { key: 'new-request-api', label: 'New Request API', onClick: handleAddRequestApi },
             ],
         },
     ];
