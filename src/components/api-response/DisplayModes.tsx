@@ -12,6 +12,8 @@ export default function renderByMode(
     onTableChange?: (pgn: { current: number; pageSize: number }) => void;
     selectedPaths?: string[]; // 新增：仅展示勾选的字段（按传入顺序渲染）
     aliasMap?: Record<string, string>; // 新增：别名
+    // 新增：排序变更回调
+    onSorterChange?: (sorter: { field?: string; order?: 'ascend' | 'descend' | null }) => void;
   }
 ): React.ReactNode {
   const rows = normalizeToArray(rawData);
@@ -32,10 +34,21 @@ export default function renderByMode(
           size: 'small',
         }}
         scroll={{ x: true }}
-        onChange={(pag) => {
+        onChange={(pag: any, _filters: any, sorter: any) => {
           const current = (pag as any)?.current ?? 1;
           const pageSize = (pag as any)?.pageSize ?? 10;
           options?.onTableChange?.({ current, pageSize });
+
+          // 归一化 sorter（支持单字段/多字段）
+          const s = Array.isArray(sorter) ? sorter[0] : sorter;
+          if (s) {
+            const field: string | undefined = (typeof s.field === 'string' ? s.field : undefined) ||
+              (typeof s.columnKey === 'string' ? s.columnKey : undefined);
+            const order = (s.order ?? null) as 'ascend' | 'descend' | null;
+            options?.onSorterChange?.({ field, order });
+          } else {
+            options?.onSorterChange?.({ field: undefined, order: null });
+          }
         }}
       />
     );

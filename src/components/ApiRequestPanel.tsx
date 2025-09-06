@@ -32,6 +32,12 @@ interface QueryParam {
   enabled: boolean;
 }
 
+// 新增：排序配置类型
+interface SortConfig {
+  asc: string; // 升序值（如 1 或 asc）
+  desc: string; // 降序值（如 -1 或 desc）
+}
+
 // 新增：字段来源类型
 type PaginationSourceKey = 'currentPage' | 'pageSize' | 'total' | 'totalPages';
 
@@ -45,6 +51,10 @@ export interface RequestPanelConfig {
   bodyType: string;
   transformer: string;
   paginationMapping: PaginationMapping;
+  // 新增：排序配置
+  sort?: SortConfig;
+  // 新增：排序映射
+  sortMapping?: SortMapping;
 }
 
 interface PaginationMapping {
@@ -78,6 +88,12 @@ interface PaginationMapping {
   };
 }
 
+// 新增：排序映射配置
+interface SortMapping {
+  mode?: 'noco' | 'api';
+  location: 'params' | 'body';
+}
+
 interface Variable {
   key: string;
   name: string;
@@ -100,11 +116,16 @@ interface ApiRequestPanelProps {
     total: number;
     totalPages?: number;
   };
+  // 新增：来自右侧 UI 表格的排序状态
+  currentSorter?: {
+    field?: string;
+    order?: 'ascend' | 'descend' | null;
+  };
   // 新增：用于预置一份配置（模版/数据源载入）
   initialConfig?: Partial<RequestPanelConfig>;
 }
 
-const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onPaginationChange, onVariableCreate, currentPagination, initialConfig }, ref) => {
+const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onPaginationChange, onVariableCreate, currentPagination, currentSorter, initialConfig }, ref) => {
   const [method, setMethod] = useState<string>('GET');
   const [url, setUrl] = useState<string>('http://localhost:3005/api/users');
   const [headers, setHeaders] = useState<Header[]>([
@@ -118,6 +139,10 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   const [loading, setLoading] = useState<boolean>(false);
   const [transformer, setTransformer] = useState<string>('data');
   const [variables, setVariables] = useState<Variable[]>([]);
+  // 新增：排序配置 state
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ asc: '', desc: '' });
+  // 新增：排序映射 state
+  const [sortMapping, setSortMapping] = useState<SortMapping>({ mode: 'noco', location: 'params' });
   const [paginationMapping, setPaginationMapping] = useState<PaginationMapping>({
     currentPage: 'page',
     pageSize: 'pageSize',
@@ -149,8 +174,10 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   const [shouldAutoRun, setShouldAutoRun] = useState(false);
   // 新增：只有在应用完 initialConfig 后才允许分页联动触发请求，避免首次命中默认 users
   const [hasAppliedInitialConfig, setHasAppliedInitialConfig] = useState<boolean>(() => !initialConfig);
-  // 记录上一次的分页，用于判断是否真的变化，避免初次渲染或非分页变更导致的重复请求
+  // 记录上一次的分页，用于判断是否真的变化
   const prevPaginationRef = useRef<{ current: number; pageSize: number } | null>(null);
+  // 新增：记录上一次排序
+  const prevSorterRef = useRef<{ field?: string; order?: 'ascend' | 'descend' | null } | null>(null);
 
   // 当传入 initialConfig 时，预填充请求配置
   useEffect(() => {
@@ -163,6 +190,9 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       if (initialConfig.bodyType) setBodyType(initialConfig.bodyType);
       if (typeof initialConfig.transformer === 'string') setTransformer(initialConfig.transformer);
       if (initialConfig.paginationMapping) setPaginationMapping(initialConfig.paginationMapping);
+      // 新增：初始化排序配置
+      if (initialConfig.sort) setSortConfig(initialConfig.sort);
+      if (initialConfig.sortMapping) setSortMapping(initialConfig.sortMapping);
       // 标记：下一次状态稳定后自动运行一次
       setShouldAutoRun(true);
       setHasAppliedInitialConfig(true);
@@ -373,6 +403,63 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     ));
   };
 
+  // 新增：更新排序映射配置
+  const updateSortMapping = (field: keyof SortMapping, value: any) => {
+    setSortMapping(prev => ({ ...prev, [field]: value }));
+  };
+
+  // 新增：根据当前 sorter 更新 params/body
+  const updateSortParams = (sorter: { field: string; order: 'ascend' | 'descend' }) => {
+    if ((sortMapping.mode || 'noco') === 'noco') return;
+    const dirRaw = sorter.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
+    const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (sorter.order === 'ascend' ? 'asc' : 'desc');
+
+    if (sortMapping.location === 'params') {
+      const newParams = [...queryParams];
+      const existing = newParams.find(p => p.name === sorter.field);
+      if (existing) {
+        existing.value = dirVal;
+        existing.enabled = true;
+      } else {
+        newParams.push({ key: Date.now().toString(), name: sorter.field, value: dirVal, enabled: true });
+      }
+      setQueryParams(newParams);
+    } else if (sortMapping.location === 'body') {
+      try {
+        const bodyObj = body && body.trim() ? JSON.parse(body) : {};
+        bodyObj[sorter.field] = dirVal;
+        setBody(JSON.stringify(bodyObj, null, 2));
+      } catch (e) {
+        console.error('Failed to update body with sort params:', e);
+      }
+    }
+  };
+
+  // 新增：监听排序变化（来自 UI 表格）
+  useEffect(() => {
+    if (!hasAppliedInitialConfig) return;
+    if (!url.trim()) return;
+
+    // 首次仅记录
+    if (prevSorterRef.current === null) {
+      if (currentSorter) prevSorterRef.current = { field: currentSorter.field, order: currentSorter.order };
+      return;
+    }
+
+    const prev = prevSorterRef.current || {};
+    const curr = currentSorter || {};
+    const changed = prev.field !== curr.field || prev.order !== curr.order;
+    if (!changed) return;
+
+    prevSorterRef.current = { field: curr.field, order: curr.order };
+
+    if ((sortMapping.mode || 'noco') === 'api' && curr.field && curr.order) {
+      updateSortParams({ field: curr.field, order: curr.order as 'ascend' | 'descend' });
+      const timer = setTimeout(() => handleRequest(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [currentSorter?.field, currentSorter?.order, hasAppliedInitialConfig, url, sortMapping.mode, sortMapping.location, sortConfig.asc, sortConfig.desc]);
+
   // 暴露给父组件的方法
   useImperativeHandle(ref, () => ({
     updatePaginationParams: (pagination: { current: number; pageSize: number }) => {
@@ -394,6 +481,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       bodyType,
       transformer,
       paginationMapping,
+      sort: sortConfig,
+      sortMapping,
     }),
     // 新增：设置配置（便于外部注入模板）
     setConfig: (cfg: Partial<RequestPanelConfig>) => {
@@ -405,6 +494,9 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       if (cfg.bodyType) setBodyType(cfg.bodyType);
       if (typeof cfg.transformer === 'string') setTransformer(cfg.transformer);
       if (cfg.paginationMapping) setPaginationMapping(cfg.paginationMapping);
+      // 新增：设置排序配置
+      if (cfg.sort) setSortConfig(cfg.sort);
+      if (cfg.sortMapping) setSortMapping(cfg.sortMapping);
     }
   }));
 
@@ -565,6 +657,19 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         }
       }
 
+      // 新增：排序注入/剔除（仅当选择 API 排序时注入）
+      const sortModeIsApi = (sortMapping.mode || 'noco') === 'api';
+      const cs = currentSorter;
+      if (sortModeIsApi && cs?.field && cs.order) {
+        const dirRaw = cs.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
+        const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (cs.order === 'ascend' ? 'asc' : 'desc');
+        if (sortMapping.location === 'params') {
+          effectiveParams[cs.field] = dirVal;
+        }
+      } else {
+        // Noco 排序：不往 params 写入（这里不强制清理历史，避免误删用户手填参数）
+      }
+
       config.params = effectiveParams;
 
       // 添加请求体（如果不是 GET 方法）
@@ -586,6 +691,13 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
               }
             }
 
+            // 新增：当排序写入 body 且选择 API 排序时，注入排序
+            if ((sortMapping.mode || 'noco') === 'api' && sortMapping.location === 'body' && cs?.field && cs.order) {
+              const dirRaw = cs.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
+              const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (cs.order === 'ascend' ? 'asc' : 'desc');
+              bodyObj[cs.field] = dirVal;
+            }
+
             config.data = bodyObj;
             config.headers['Content-Type'] = 'application/json';
           } catch (e) {
@@ -604,6 +716,12 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         }
         if (paginationMapping.enabledFields.pageSize && paginationMapping.pageSize) {
           minimalBody[paginationMapping.pageSize] = Number(getMappedValue(paginationMapping.valueSources.pageSize));
+        }
+        // 新增：当排序写入 body 且选择 API 排序时，注入排序
+        if ((sortMapping.mode || 'noco') === 'api' && sortMapping.location === 'body' && currentSorter?.field && currentSorter.order) {
+          const dirRaw = currentSorter.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
+          const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (currentSorter.order === 'ascend' ? 'asc' : 'desc');
+          minimalBody[currentSorter.field] = dirVal;
         }
         if (Object.keys(minimalBody).length > 0) {
           config.data = minimalBody;
@@ -996,6 +1114,74 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                 1) 不再向请求写入分页参数；
                 2) 忽略响应中的分页字段；
                 3) 表格分页将基于数据量在前端计算。</Text>
+            </div>
+          )}
+        </div>
+      ),
+    },
+    // 新增：排序 Tab（位于 Pagination 后面）
+    {
+      key: 'sort',
+      label: 'Sort',
+      children: (
+        <div>
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>排序模式:</Text>
+            <Select
+              size="small"
+              style={{ width: 200, marginLeft: 8 }}
+              value={sortMapping.mode || 'noco'}
+              onChange={(v) => updateSortMapping('mode', v)}
+            >
+              <Option value="noco">使用 NocoBase 排序</Option>
+              <Option value="api">使用 API 排序</Option>
+            </Select>
+          </div>
+
+          {(sortMapping.mode || 'noco') === 'api' ? (
+            <>
+              <div style={{ marginBottom: '16px' }}>
+                <Text strong>参数写入位置:</Text>
+                <Select
+                  value={sortMapping.location}
+                  onChange={(value) => updateSortMapping('location', value)}
+                  style={{ width: 140, marginLeft: 8 }}
+                  size="small"
+                >
+                  <Option value="params">Query Params</Option>
+                  <Option value="body">Request Body</Option>
+                </Select>
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary">配置请求中的排序值（升序/降序）。示例：升序 1，降序 -1；或升序 asc，降序 desc。</Text>
+              </div>
+              <Row gutter={8}>
+                <Col span={12}>
+                  <div style={{ marginBottom: 6 }}><Text strong>升序值</Text></div>
+                  <Input
+                    placeholder="如：1 或 asc"
+                    value={sortConfig.asc}
+                    onChange={(e) => setSortConfig({ ...sortConfig, asc: e.target.value })}
+                    size="small"
+                  />
+                </Col>
+                <Col span={12}>
+                  <div style={{ marginBottom: 6 }}><Text strong>降序值</Text></div>
+                  <Input
+                    placeholder="如：-1 或 desc"
+                    value={sortConfig.desc}
+                    onChange={(e) => setSortConfig({ ...sortConfig, desc: e.target.value })}
+                    size="small"
+                  />
+                </Col>
+              </Row>
+            </>
+          ) : (
+            <div style={{ background: '#fffbe6', padding: 12, border: '1px solid #ffe58f', borderRadius: 4 }}>
+              <Text>已启用「使用 NocoBase 排序」：
+                1) 不再向请求写入排序参数；
+                2) 忽略响应中的排序设置；
+                3) 表格排序将基于响应数据在前端进行。</Text>
             </div>
           )}
         </div>

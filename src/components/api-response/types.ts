@@ -43,4 +43,6 @@ export interface ApiResponsePanelProps {
   initialSelectedPaths?: string[];
   initialAliasMap?: Record<string, string>;
   onSchemaChange?: (payload: { selectedPaths: string[]; aliasMap: Record<string, string> }) => void;
+  // 新增：排序变化回调（表格列头点击时触发）
+  onSorterChange?: (sorter: { field?: string; order?: 'ascend' | 'descend' | null }) => void;
 }
