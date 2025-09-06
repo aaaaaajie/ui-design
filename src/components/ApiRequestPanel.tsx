@@ -84,6 +84,8 @@ interface Variable {
   value: string;
   type: string;
   source: string; // 来源字段路径
+  // 新增：变量作用域
+  scope?: string; // 作用域（如：NocoBase Request）
   isBuiltIn?: boolean; // 标识是否为内置变量
 }
 
@@ -137,10 +139,10 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     },
     // 默认响应字段路径（基于你的示例）
     responseFields: {
-      currentPage: 'currentPage',
-      pageSize: 'pageSize',
-      total: 'totalCount',
-      totalPages: 'totalPages',
+      currentPage: 'meta.currentPage',
+      pageSize: 'meta.pageSize',
+      total: 'meta.totalCount',
+      totalPages: 'meta.totalPages',
     }
   });
   // 新增：用于在应用 initialConfig 后自动触发一次请求
@@ -149,7 +151,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   const [hasAppliedInitialConfig, setHasAppliedInitialConfig] = useState<boolean>(() => !initialConfig);
   // 记录上一次的分页，用于判断是否真的变化，避免初次渲染或非分页变更导致的重复请求
   const prevPaginationRef = useRef<{ current: number; pageSize: number } | null>(null);
-  
+
   // 当传入 initialConfig 时，预填充请求配置
   useEffect(() => {
     if (initialConfig) {
@@ -186,7 +188,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   const getBuiltInVariables = (): Variable[] => {
     const pagination = currentPagination || { current: 1, pageSize: 10, total: 0, totalPages: 0 };
     const totalPages = pagination.totalPages || Math.ceil((pagination.total || 0) / (pagination.pageSize || 1));
-    
+
     return [
       {
         key: 'builtin-current-page',
@@ -194,6 +196,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         value: pagination.current.toString(),
         type: 'number',
         source: 'UI Display Pagination',
+        scope: 'NocoBase Request',
         isBuiltIn: true,
       },
       {
@@ -202,6 +205,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         value: pagination.pageSize.toString(),
         type: 'number',
         source: 'UI Display Pagination',
+        scope: 'NocoBase Request',
         isBuiltIn: true,
       },
       {
@@ -210,6 +214,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         value: (pagination.total ?? 0).toString(),
         type: 'number',
         source: 'UI Display Pagination',
+        scope: 'NocoBase Request',
         isBuiltIn: true,
       },
       {
@@ -218,6 +223,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         value: (totalPages || 0).toString(),
         type: 'number',
         source: 'UI Display Pagination',
+        scope: 'NocoBase Request',
         isBuiltIn: true,
       },
     ];
@@ -362,7 +368,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
 
   // 更新变量
   const updateVariable = (key: string, field: keyof Variable, value: any) => {
-    setVariables(prev => prev.map(variable => 
+    setVariables(prev => prev.map(variable =>
       variable.key === key ? { ...variable, [field]: value } : variable
     ));
   };
@@ -880,7 +886,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
             </Select>
           </div>
 
-          { (paginationMapping.pagingMode || 'api') === 'api' ? (
+          {(paginationMapping.pagingMode || 'api') === 'api' ? (
             <>
               <div style={{ marginBottom: '16px' }}>
                 <Text strong>参数写入位置:</Text>
@@ -946,7 +952,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                 rowKey={(record: any) => `resp-${record.key}`}
                 columns={[
                   {
-                    title: '响应数据路径 (相对 response.data)',
+                    title: '响应数据路径',
                     dataIndex: 'respPath',
                     render: (_: any, record: any) => (
                       <Input
@@ -1018,10 +1024,10 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                   ),
                 },
                 {
-                  title: 'Source',
-                  dataIndex: 'source',
-                  render: (source: string) => (
-                    <Text type="secondary" style={{ fontSize: '12px' }}>{source}</Text>
+                  title: 'Scope',
+                  dataIndex: 'scope',
+                  render: (scope: string) => (
+                    <Text type="secondary" style={{ fontSize: '12px' }}>{scope || 'NocoBase Request'}</Text>
                   ),
                 },
               ]}
@@ -1038,9 +1044,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
               Custom Variables
             </Title>
             {variables.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '20px', color: '#999', background: '#fafafa', borderRadius: '4px' }}>
-                <Text>No custom variables yet. Create variables from the response schema in the right panel.</Text>
-              </div>
+              <Text type="secondary">暂无自定义变量</Text>
             ) : (
               <Table
                 columns={[
@@ -1073,23 +1077,30 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                     dataIndex: 'type',
                     render: (type: string, record: Variable) => (
                       <Select
-                        value={type}
-                        onChange={(value) => updateVariable(record.key, 'type', value)}
                         size="small"
-                        style={{ width: '100px' }}
-                      >
-                        <Option value="string">String</Option>
-                        <Option value="number">Number</Option>
-                        <Option value="boolean">Boolean</Option>
-                        <Option value="object">Object</Option>
-                      </Select>
+                        style={{ width: '100%' }}
+                        value={type}
+                        onChange={(val) => updateVariable(record.key, 'type', val)}
+                        options={[
+                          { label: 'string', value: 'string' },
+                          { label: 'number', value: 'number' },
+                          { label: 'boolean', value: 'boolean' },
+                          { label: 'object', value: 'object' },
+                        ]}
+                      />
                     ),
                   },
                   {
-                    title: 'Source',
-                    dataIndex: 'source',
-                    render: (source: string) => (
-                      <Text type="secondary" style={{ fontSize: '12px' }}>{source}</Text>
+                    title: 'Scope',
+                    dataIndex: 'scope',
+                    render: (scope: string, record: Variable) => (
+                      <Select
+                        size="small"
+                        style={{ width: '100%' }}
+                        value={scope || 'NocoBase Request'}
+                        onChange={(val) => updateVariable(record.key, 'scope', val)}
+                        options={[{ label: 'NocoBase Request', value: 'NocoBase Request' }]}
+                      />
                     ),
                   },
                   {

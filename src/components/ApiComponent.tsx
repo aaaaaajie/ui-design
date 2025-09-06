@@ -289,30 +289,6 @@ const App: React.FC = () => {
     return (
         <Layout style={{ minHeight: '100vh', backgroundColor: '#f5f5f5' }}>
             <Content style={{ padding: '24px' }}>
-                {/* 添加块按钮 */}
-                <div style={{ marginBottom: '24px' }}>
-                    <Dropdown
-                        menu={{ items: addMenuItems }}
-                        trigger={['hover']}
-                        placement="bottomLeft"
-                    >
-                        <Button
-                            type="dashed"
-                            icon={<PlusOutlined />}
-                            style={{
-                                borderStyle: 'dashed',
-                                borderColor: '#d9d9d9',
-                                color: '#666',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '8px'
-                            }}
-                        >
-                            Add block <DownOutlined />
-                        </Button>
-                    </Dropdown>
-                </div>
-
                 {/* 渲染块 */}
                 {blocks.map((block) => (
                     <Card
@@ -451,19 +427,29 @@ const App: React.FC = () => {
                     </Card>
                 ))}
 
-                {/* 空状态 */}
-                {blocks.length === 0 && (
-                    <div style={{
-                        textAlign: 'center',
-                        padding: '100px 0',
-                        color: '#999'
-                    }}>
-                        <p style={{ fontSize: '16px', marginBottom: '16px' }}>
-                            No blocks yet
-                        </p>
-                        <p>Click "Add block" to get started</p>
-                    </div>
-                )}
+                {/* 添加块按钮（底部） */}
+                <div style={{ marginTop: '24px' }}>
+                    <Dropdown
+                        menu={{ items: addMenuItems }}
+                        trigger={['hover']}
+                        placement="bottomLeft"
+                    >
+                        <Button
+                            type="dashed"
+                            icon={<PlusOutlined />}
+                            style={{
+                                borderStyle: 'dashed',
+                                borderColor: '#d9d9d9',
+                                color: '#666',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px'
+                            }}
+                        >
+                            Add block <DownOutlined />
+                        </Button>
+                    </Dropdown>
+                </div>
             </Content>
 
             {/* 新增：编辑配置弹窗（两栏预览） */}
