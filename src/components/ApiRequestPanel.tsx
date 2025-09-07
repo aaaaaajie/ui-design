@@ -301,36 +301,38 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         scope: 'NocoBase Request',
         isBuiltIn: true,
       },
-      {
-        key: 'builtin-filter-operators',
-        name: 'filterOperators',
-        value: JSON.stringify(defaultOps),
-        type: 'object',
-        source: 'Filter Config',
+      // 将每个操作符作为独立的内置变量暴露
+      ...defaultOps.map(op => ({
+        key: `builtin-filter-operator-${op}`,
+        name: op,
+        value: op,
+        type: 'operator',
+        source: 'Filter Operator',
         scope: 'NocoBase Request',
         isBuiltIn: true,
-      }
+      }))
     );
 
     return vars;
   };
 
-  // 新增：获取内置的筛选操作符列表（来自变量 filterOperators）
-  const getFilterOperators = (): Array<{ label: string; value: string }> => {
+  // 新增：获取内置的筛选操作符列表（来自多个内置变量）
+  const getFilterOperators = () => {
     try {
       const vars = getBuiltInVariables();
-      const v = vars.find(x => x.name === 'filterOperators');
-      if (v && typeof v.value === 'string') {
-        const parsed = JSON.parse(v.value);
-        if (Array.isArray(parsed)) {
-          return parsed.map((op: any) => ({ label: String(op), value: String(op) }));
-        }
+      const ops = vars.filter(v => v.isBuiltIn && (v.source === 'Filter Operator' || v.type === 'operator'));
+      if (ops.length) {
+        const seen = new Set<string>();
+        return ops
+          .map(v => String(v.name))
+          .filter(name => {
+            if (seen.has(name)) return false;
+            seen.add(name);
+            return true;
+          })
+          .map(name => ({ label: name, value: name }));
       }
-    } catch (_) {}
-    // 回退：默认操作符
-    return [
-      'equals', 'not_equals', 'contains', 'starts_with', 'ends_with', 'gt', 'gte', 'lt', 'lte', 'empty', 'not_empty'
-    ].map(op => ({ label: op, value: op }));
+    } catch (_) { }
   };
 
   // 新增：根据变量名查找变量值（含内置与自定义），并尽量解析为对象
@@ -1321,7 +1323,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                 <Select
                   size="small"
                   style={{ width: 260, marginLeft: 8 }}
-                  placeholder="请选择内置变量（稍后补充）"
+                  placeholder="请选择变量"
                   value={filterMapping.parseSource}
                   onChange={(v) => updateFilterMapping('parseSource', v)}
                   options={getBuiltInVariables().map(v => ({ label: v.name, value: v.name }))}
@@ -1381,7 +1383,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                           <Select
                             size="small"
                             style={{ width: '100%' }}
-                            placeholder="请选择（稍后补充内置操作符）"
+                            placeholder="请选择内置操作符"
                             value={record.builtinOp}
                             onChange={(v) => updateOpMappingRow(record.key, { builtinOp: v })}
                             options={getFilterOperators()}
@@ -1403,7 +1405,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                   <div style={{ marginTop: 12, color: '#888', fontSize: 12 }}>
                     示例（自定义结构）：
                     <pre style={{ whiteSpace: 'pre-wrap', background: '#fafafa', padding: 8, borderRadius: 4, border: '1px solid #f0f0f0' }}>
-{`query={"$and":[{"field":"a","${filterMapping.opFieldKey || 'op'}":"eq","value":1},{"field":"b","${filterMapping.opFieldKey || 'op'}":"contains","value":2}]}`}
+                      {`query={"$and":[{"field":"a","${filterMapping.opFieldKey || 'op'}":"eq","value":1},{"field":"b","${filterMapping.opFieldKey || 'op'}":"contains","value":2}]}`}
                     </pre>
                   </div>
                 </div>
