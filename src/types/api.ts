@@ -20,6 +20,8 @@ export interface Block {
   displayComponent?: React.ReactNode;
   requestPanelRef?: React.RefObject<any>;
   currentPagination?: { current: number; pageSize: number; total: number; totalPages?: number };
+  // 新增：当前表格排序（用于 API 排序联动）
+  currentSorter?: { field?: string; order?: 'ascend' | 'descend' | null };
   displayOnly?: boolean;
   initialConfig?: Partial<RequestPanelConfig>;
   isPlaceholder?: boolean;

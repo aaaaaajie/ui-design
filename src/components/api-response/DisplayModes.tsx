@@ -14,13 +14,16 @@ export default function renderByMode(
     aliasMap?: Record<string, string>; // 新增：别名
     // 新增：排序变更回调
     onSorterChange?: (sorter: { field?: string; order?: 'ascend' | 'descend' | null }) => void;
+    // 新增：排序模式（影响是否启用本地排序）
+    sortMode?: 'noco' | 'api';
   }
 ): React.ReactNode {
   const rows = normalizeToArray(rawData);
   if (mode === 'table') {
+    const enableLocalSorter = (options?.sortMode || 'noco') === 'noco';
     const columns = options?.selectedPaths && options.selectedPaths.length > 0
-      ? generateSelectedColumns(options.selectedPaths, options.aliasMap)
-      : generateTableColumns(rows);
+      ? generateSelectedColumns(options.selectedPaths, options.aliasMap, enableLocalSorter)
+      : generateTableColumns(rows, enableLocalSorter);
     return (
       <Table
         size="small"

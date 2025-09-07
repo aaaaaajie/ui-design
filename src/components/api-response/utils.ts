@@ -22,6 +22,29 @@ export function safeToDisplay(value: any): React.ReactNode {
   return String(value);
 }
 
+// 将任意值转换为排序键
+const valueToSortKey = (val: any): number | string => {
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'number') return val;
+  if (typeof val === 'boolean') return val ? 1 : 0;
+  if (typeof val === 'string') {
+    const n = Number(val);
+    return Number.isFinite(n) ? n : val.toLowerCase();
+  }
+  try {
+    return JSON.stringify(val).toLowerCase();
+  } catch {
+    return String(val);
+  }
+};
+
+const compareValues = (a: any, b: any): number => {
+  const ak = valueToSortKey(a);
+  const bk = valueToSortKey(b);
+  if (typeof ak === 'number' && typeof bk === 'number') return ak - bk;
+  return String(ak).localeCompare(String(bk));
+};
+
 // 将数据标准化为表格数组
 export function normalizeToArray(data: any): any[] {
   if (Array.isArray(data))
@@ -33,7 +56,7 @@ export function normalizeToArray(data: any): any[] {
 }
 
 // 根据数据生成表格列（避免在 .ts 文件中使用 JSX）
-export function generateTableColumns(rows: any[]): any[] {
+export function generateTableColumns(rows: any[], enableSorter: boolean = true): any[] {
   const first = Array.isArray(rows) && rows.length > 0 ? rows[0] : undefined;
   if (!first || typeof first !== 'object') return [];
   const keys = Object.keys(first).filter((k) => k !== 'key');
@@ -42,6 +65,10 @@ export function generateTableColumns(rows: any[]): any[] {
     dataIndex: k,
     key: k,
     ellipsis: true,
+    // 启用/禁用本地排序
+    ...(enableSorter
+      ? { sorter: (a: any, b: any) => compareValues(a?.[k], b?.[k]) }
+      : { sorter: (a: any, b: any) => { void a; void b; return 0; } }),
     render: (val: any) => {
       const titleStr =
         typeof val === 'object'
@@ -58,8 +85,28 @@ export function generateTableColumns(rows: any[]): any[] {
   }));
 }
 
+// 选中路径取值（支持对象与对象数组子字段）
+const getValueForSelectedPath = (row: any, fullPath: string) => {
+  const segments = fullPath.split('.');
+  if (segments.length === 1) return getNestedValue(row, fullPath);
+  const basePath = segments.slice(0, -1).join('.');
+  const childPath = segments.slice(-1).join('.');
+  const base = getNestedValue(row, basePath);
+  if (Array.isArray(base)) {
+    const first = base[0];
+    if (first && typeof first === 'object') return getNestedValue(first, childPath);
+    try {
+      return JSON.stringify(base);
+    } catch {
+      return String(base);
+    }
+  }
+  if (base && typeof base === 'object') return getNestedValue(base, childPath);
+  return undefined;
+};
+
 // 按选中的字段路径生成列（支持对象与对象数组的子字段，如 items.productName 或 shippingAddress.province）
-export function generateSelectedColumns(paths: string[], aliasMap?: Record<string, string>): any[] {
+export function generateSelectedColumns(paths: string[], aliasMap?: Record<string, string>, enableSorter: boolean = true): any[] {
   const uniq = Array.from(new Set(paths.filter(Boolean)));
   return uniq.map((fullPath) => {
     const segments = fullPath.split('.');
@@ -73,6 +120,10 @@ export function generateSelectedColumns(paths: string[], aliasMap?: Record<strin
       key: fullPath,
       dataIndex: fullPath,
       ellipsis: true,
+      // 启用/禁用本地排序（使用与渲染相同的取值逻辑）
+      ...(enableSorter
+        ? { sorter: (a: any, b: any) => compareValues(getValueForSelectedPath(a, fullPath), getValueForSelectedPath(b, fullPath)) }
+        : { sorter: (a: any, b: any) => { void a; void b; return 0; } }),
       render: (_: any, row: any) => {
         let val: any;
         if (segments.length === 1) {

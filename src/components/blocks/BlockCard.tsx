@@ -17,9 +17,11 @@ interface Props {
   onPaginationChange: (blockId: string, pagination: { current: number; pageSize: number }) => void;
   // 新增：Schema 选择/别名变更
   onSchemaChange?: (blockId: string, payload: { selectedPaths: string[]; aliasMap: Record<string, string> }) => void;
+  // 新增：排序变化（来自表格列头点击）
+  onSorterChange?: (blockId: string, sorter: { field?: string; order?: 'ascend' | 'descend' | null }) => void;
 }
 
-const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, onRefresh, onOpenEdit, onResponse, onDisplayUI, onPaginationChange, onSchemaChange }) => {
+const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, onRefresh, onOpenEdit, onResponse, onDisplayUI, onPaginationChange, onSchemaChange, onSorterChange }) => {
   return (
     <Card
       key={block.id}
@@ -88,6 +90,8 @@ const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, 
                 onResponse={(response) => onResponse(block.id, response)}
                 currentPagination={block.currentPagination}
                 initialConfig={block.initialConfig}
+                // 新增：传递当前排序
+                currentSorter={block.currentSorter}
               />
               {block.response && (
                 <ApiResponsePanel
@@ -99,6 +103,8 @@ const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, 
                   initialSelectedPaths={block.selectedPaths}
                   initialAliasMap={block.aliasMap}
                   onSchemaChange={(payload) => onSchemaChange?.(block.id, payload)}
+                  // 新增：排序变化上抛
+                  onSorterChange={(s) => onSorterChange?.(block.id, s)}
                 />
               )}
             </div>
@@ -113,6 +119,8 @@ const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, 
                   onResponse={(response) => onResponse(block.id, response)}
                   currentPagination={block.currentPagination}
                   initialConfig={block.initialConfig}
+                  // 新增：传递当前排序
+                  currentSorter={block.currentSorter}
                 />
                 {block.response && (
                   <div style={{ marginTop: '24px' }}>
@@ -125,6 +133,8 @@ const BlockCard: React.FC<Props> = ({ block, buildConfigureMenuItems, onRemove, 
                       initialSelectedPaths={block.selectedPaths}
                       initialAliasMap={block.aliasMap}
                       onSchemaChange={(payload) => onSchemaChange?.(block.id, payload)}
+                      // 新增：排序变化上抛
+                      onSorterChange={(s) => onSorterChange?.(block.id, s)}
                     />
                   </div>
                 )}

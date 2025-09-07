@@ -183,6 +183,14 @@ const App: React.FC = () => {
         )));
     };
 
+    // 新增：表格排序变化 —— 更新 block.currentSorter 并透传到 ApiRequestPanel
+    const handleSorterChange = (blockId: string, sorter: { field?: string; order?: 'ascend' | 'descend' | null }) => {
+        setBlocks(prev => prev.map(b => (
+            b.id === blockId ? { ...b, currentSorter: sorter } : b
+        )));
+        // ApiRequestPanel 内部 useEffect 会监听 props.currentSorter 并自动注入参数与触发请求
+    };
+
     const handleRemoveBlock = (blockId: string) => {
         setBlocks(prev => prev.filter(block => block.id !== blockId));
     };
@@ -251,6 +259,8 @@ const App: React.FC = () => {
                         onDisplayUI={handleDisplayUI}
                         onPaginationChange={handlePaginationChange}
                         onSchemaChange={handleSchemaChange}
+                        // 新增：排序变化
+                        onSorterChange={handleSorterChange}
                     />
                 ))}
 
@@ -304,6 +314,8 @@ const App: React.FC = () => {
                                     }}
                                     currentPagination={editDraftBlock.currentPagination}
                                     initialConfig={editInitialConfig}
+                                    // 新增：传递当前排序
+                                    currentSorter={editDraftBlock.currentSorter}
                                 />
                                 {editDraftBlock.response && (
                                     <div style={{ marginTop: 24 }}>
@@ -320,6 +332,8 @@ const App: React.FC = () => {
                                             initialSelectedPaths={editDraftBlock.selectedPaths}
                                             initialAliasMap={editDraftBlock.aliasMap}
                                             onSchemaChange={(payload) => setEditDraftBlock(prev => prev ? { ...prev, selectedPaths: payload.selectedPaths, aliasMap: payload.aliasMap } : prev)}
+                                            // 新增：排序变化上抛
+                                            onSorterChange={(s) => setEditDraftBlock(prev => prev ? { ...prev, currentSorter: s } : prev)}
                                         />
                                     </div>
                                 )}

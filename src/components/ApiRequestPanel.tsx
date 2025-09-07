@@ -92,6 +92,9 @@ interface PaginationMapping {
 interface SortMapping {
   mode?: 'noco' | 'api';
   location: 'params' | 'body';
+  // 新增：排序字段/方向的参数名
+  fieldKey?: string; // 如：sortBy
+  directionKey?: string; // 如：sortDirection
 }
 
 interface Variable {
@@ -142,7 +145,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   // 新增：排序配置 state
   const [sortConfig, setSortConfig] = useState<SortConfig>({ asc: '', desc: '' });
   // 新增：排序映射 state
-  const [sortMapping, setSortMapping] = useState<SortMapping>({ mode: 'noco', location: 'params' });
+  const [sortMapping, setSortMapping] = useState<SortMapping>({ mode: 'noco', location: 'params', fieldKey: '', directionKey: '' });
   const [paginationMapping, setPaginationMapping] = useState<PaginationMapping>({
     currentPage: 'page',
     pageSize: 'pageSize',
@@ -414,23 +417,94 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     const dirRaw = sorter.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
     const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (sorter.order === 'ascend' ? 'asc' : 'desc');
 
+    const fieldKey = (sortMapping.fieldKey || '').trim();
+    const directionKey = (sortMapping.directionKey || '').trim();
+
     if (sortMapping.location === 'params') {
       const newParams = [...queryParams];
-      const existing = newParams.find(p => p.name === sorter.field);
-      if (existing) {
-        existing.value = dirVal;
-        existing.enabled = true;
-      } else {
-        newParams.push({ key: Date.now().toString(), name: sorter.field, value: dirVal, enabled: true });
+
+      if (fieldKey) {
+        const idx = newParams.findIndex(p => p.name === fieldKey);
+        if (idx >= 0) {
+          newParams[idx] = { ...newParams[idx], value: sorter.field, enabled: true };
+        } else {
+          newParams.push({ key: Date.now().toString(), name: fieldKey, value: sorter.field, enabled: true });
+        }
       }
+
+      if (directionKey) {
+        const idx2 = newParams.findIndex(p => p.name === directionKey);
+        if (idx2 >= 0) {
+          newParams[idx2] = { ...newParams[idx2], value: dirVal, enabled: true };
+        } else {
+          newParams.push({ key: (Date.now() + 1).toString(), name: directionKey, value: dirVal, enabled: true });
+        }
+      }
+
+      // 兼容：未配置任何键时，沿用旧逻辑（使用字段名作为 key）
+      if (!fieldKey && !directionKey) {
+        // 若上一次的排序字段与本次不同，清理旧字段
+        const prevField = prevSorterRef.current?.field;
+        if (prevField && prevField !== sorter.field) {
+          const idxOld = newParams.findIndex(p => p.name === prevField);
+          if (idxOld >= 0) newParams.splice(idxOld, 1);
+        }
+        const existing = newParams.find(p => p.name === sorter.field);
+        if (existing) {
+          existing.value = dirVal;
+          existing.enabled = true;
+        } else {
+          newParams.push({ key: (Date.now() + 2).toString(), name: sorter.field, value: dirVal, enabled: true });
+        }
+      }
+
       setQueryParams(newParams);
     } else if (sortMapping.location === 'body') {
       try {
         const bodyObj = body && body.trim() ? JSON.parse(body) : {};
-        bodyObj[sorter.field] = dirVal;
+
+        if (fieldKey) bodyObj[fieldKey] = sorter.field;
+        if (directionKey) bodyObj[directionKey] = dirVal;
+
+        // 兼容：未配置任何键时，沿用旧逻辑（使用字段名作为 key）
+        if (!fieldKey && !directionKey) {
+          const prevField = prevSorterRef.current?.field;
+          if (prevField && prevField !== sorter.field && Object.prototype.hasOwnProperty.call(bodyObj, prevField)) {
+            delete bodyObj[prevField];
+          }
+          bodyObj[sorter.field] = dirVal;
+        }
+
         setBody(JSON.stringify(bodyObj, null, 2));
       } catch (e) {
         console.error('Failed to update body with sort params:', e);
+      }
+    }
+  };
+
+  // 新增：清空排序参数（当取消排序时）
+  const clearSortParam = (field?: string) => {
+    if ((sortMapping.mode || 'noco') === 'noco') return;
+    const fieldKey = (sortMapping.fieldKey || '').trim();
+    const directionKey = (sortMapping.directionKey || '').trim();
+
+    if (sortMapping.location === 'params') {
+      let newParams = [...queryParams];
+      if (fieldKey) newParams = newParams.filter(p => p.name !== fieldKey);
+      if (directionKey) newParams = newParams.filter(p => p.name !== directionKey);
+      // 兼容：若未配置键，则按旧逻辑用字段名清理
+      if (!fieldKey && !directionKey && field) newParams = newParams.filter(p => p.name !== field);
+      setQueryParams(newParams);
+    } else if (sortMapping.location === 'body') {
+      try {
+        const bodyObj = body && body.trim() ? JSON.parse(body) : {};
+        if (fieldKey && Object.prototype.hasOwnProperty.call(bodyObj, fieldKey)) delete bodyObj[fieldKey];
+        if (directionKey && Object.prototype.hasOwnProperty.call(bodyObj, directionKey)) delete bodyObj[directionKey];
+        // 兼容：未配置时按旧逻辑清理
+        if (!fieldKey && !directionKey && field && Object.prototype.hasOwnProperty.call(bodyObj, field)) delete bodyObj[field];
+        setBody(JSON.stringify(bodyObj, null, 2));
+      } catch (e) {
+        console.error('Failed to clear sort param from body:', e);
       }
     }
   };
@@ -440,25 +514,36 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     if (!hasAppliedInitialConfig) return;
     if (!url.trim()) return;
 
-    // 首次仅记录
+    const curr = currentSorter || {};
+
+    // 首次：如果有有效排序，直接应用并触发
     if (prevSorterRef.current === null) {
-      if (currentSorter) prevSorterRef.current = { field: currentSorter.field, order: currentSorter.order };
+      prevSorterRef.current = { field: curr.field, order: curr.order };
+      if ((sortMapping.mode || 'noco') === 'api' && curr.field && curr.order) {
+        updateSortParams({ field: curr.field, order: curr.order as 'ascend' | 'descend' });
+        const timer = setTimeout(() => handleRequest(), 100);
+        return () => clearTimeout(timer);
+      }
       return;
     }
 
     const prev = prevSorterRef.current || {};
-    const curr = currentSorter || {};
     const changed = prev.field !== curr.field || prev.order !== curr.order;
     if (!changed) return;
 
     prevSorterRef.current = { field: curr.field, order: curr.order };
 
-    if ((sortMapping.mode || 'noco') === 'api' && curr.field && curr.order) {
-      updateSortParams({ field: curr.field, order: curr.order as 'ascend' | 'descend' });
+    if ((sortMapping.mode || 'noco') === 'api') {
+      if (curr.field && curr.order) {
+        updateSortParams({ field: curr.field, order: curr.order as 'ascend' | 'descend' });
+      } else {
+        // 取消排序：清理上一次字段
+        clearSortParam(prev.field);
+      }
       const timer = setTimeout(() => handleRequest(), 100);
       return () => clearTimeout(timer);
     }
-  }, [currentSorter?.field, currentSorter?.order, hasAppliedInitialConfig, url, sortMapping.mode, sortMapping.location, sortConfig.asc, sortConfig.desc]);
+  }, [currentSorter?.field, currentSorter?.order, hasAppliedInitialConfig, url, sortMapping.mode, sortMapping.location, sortMapping.fieldKey, sortMapping.directionKey, sortConfig.asc, sortConfig.desc]);
 
   // 暴露给父组件的方法
   useImperativeHandle(ref, () => ({
@@ -663,8 +748,15 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       if (sortModeIsApi && cs?.field && cs.order) {
         const dirRaw = cs.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
         const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (cs.order === 'ascend' ? 'asc' : 'desc');
+        const fieldKey = (sortMapping.fieldKey || '').trim();
+        const directionKey = (sortMapping.directionKey || '').trim();
         if (sortMapping.location === 'params') {
-          effectiveParams[cs.field] = dirVal;
+          if (fieldKey) effectiveParams[fieldKey] = cs.field;
+          if (directionKey) effectiveParams[directionKey] = dirVal;
+          // 兼容：未配置任何键时，沿用旧逻辑（使用字段名作为 key）
+          if (!fieldKey && !directionKey) {
+            effectiveParams[cs.field] = dirVal;
+          }
         }
       } else {
         // Noco 排序：不往 params 写入（这里不强制清理历史，避免误删用户手填参数）
@@ -693,9 +785,15 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
 
             // 新增：当排序写入 body 且选择 API 排序时，注入排序
             if ((sortMapping.mode || 'noco') === 'api' && sortMapping.location === 'body' && cs?.field && cs.order) {
-              const dirRaw = cs.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
-              const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (cs.order === 'ascend' ? 'asc' : 'desc');
-              bodyObj[cs.field] = dirVal;
+              const dirRaw2 = cs.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
+              const dirVal2 = dirRaw2 && dirRaw2.trim() ? dirRaw2.trim() : (cs.order === 'ascend' ? 'asc' : 'desc');
+              const fieldKey = (sortMapping.fieldKey || '').trim();
+              const directionKey = (sortMapping.directionKey || '').trim();
+              if (fieldKey) bodyObj[fieldKey] = cs.field;
+              if (directionKey) bodyObj[directionKey] = dirVal2;
+              if (!fieldKey && !directionKey) {
+                bodyObj[cs.field] = dirVal2;
+              }
             }
 
             config.data = bodyObj;
@@ -721,7 +819,11 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         if ((sortMapping.mode || 'noco') === 'api' && sortMapping.location === 'body' && currentSorter?.field && currentSorter.order) {
           const dirRaw = currentSorter.order === 'ascend' ? sortConfig.asc : sortConfig.desc;
           const dirVal = dirRaw && dirRaw.trim() ? dirRaw.trim() : (currentSorter.order === 'ascend' ? 'asc' : 'desc');
-          minimalBody[currentSorter.field] = dirVal;
+          const fieldKey = (sortMapping.fieldKey || '').trim();
+          const directionKey = (sortMapping.directionKey || '').trim();
+          if (fieldKey) minimalBody[fieldKey] = currentSorter.field;
+          if (directionKey) minimalBody[directionKey] = dirVal;
+          if (!fieldKey && !directionKey && currentSorter.field) minimalBody[currentSorter.field] = dirVal;
         }
         if (Object.keys(minimalBody).length > 0) {
           config.data = minimalBody;
@@ -1152,9 +1254,29 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                   <Option value="body">Request Body</Option>
                 </Select>
               </div>
-              <div style={{ marginBottom: 8 }}>
-                <Text type="secondary">配置请求中的排序值（升序/降序）。示例：升序 1，降序 -1；或升序 asc，降序 desc。</Text>
-              </div>
+
+              {/* 新增：排序参数名配置 */}
+              <Row gutter={8} style={{ marginBottom: 12 }}>
+                <Col span={12}>
+                  <div style={{ marginBottom: 6 }}><Text strong>排序字段参数名</Text></div>
+                  <Input
+                    placeholder="如：sortBy"
+                    value={sortMapping.fieldKey}
+                    onChange={(e) => updateSortMapping('fieldKey', e.target.value)}
+                    size="small"
+                  />
+                </Col>
+                <Col span={12}>
+                  <div style={{ marginBottom: 6 }}><Text strong>排序方向参数名</Text></div>
+                  <Input
+                    placeholder="如：sortDirection"
+                    value={sortMapping.directionKey}
+                    onChange={(e) => updateSortMapping('directionKey', e.target.value)}
+                    size="small"
+                  />
+                </Col>
+              </Row>
+
               <Row gutter={8}>
                 <Col span={12}>
                   <div style={{ marginBottom: 6 }}><Text strong>升序值</Text></div>

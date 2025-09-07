@@ -49,6 +49,8 @@ const CreateApiRequestModal: React.FC<Props> = ({
                   setDraftBlock(prev => prev && prev.id === draftBlock.id ? { ...prev, response } : prev);
                 }}
                 currentPagination={draftBlock.currentPagination}
+                // 新增：传递排序状态
+                currentSorter={draftBlock.currentSorter}
               />
 
               {draftBlock.response && (
@@ -67,6 +69,8 @@ const CreateApiRequestModal: React.FC<Props> = ({
                     initialSelectedPaths={draftBlock.selectedPaths}
                     initialAliasMap={draftBlock.aliasMap}
                     onSchemaChange={(payload) => setDraftBlock(prev => prev ? { ...prev, selectedPaths: payload.selectedPaths, aliasMap: payload.aliasMap } : prev)}
+                    // 新增：排序变化上抛存入草稿
+                    onSorterChange={(s) => setDraftBlock(prev => prev ? { ...prev, currentSorter: s } : prev)}
                   />
                 </div>
               )}
