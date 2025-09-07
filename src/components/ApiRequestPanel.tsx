@@ -55,6 +55,8 @@ export interface RequestPanelConfig {
   sort?: SortConfig;
   // 新增：排序映射
   sortMapping?: SortMapping;
+  // 新增：筛选映射
+  filterMapping?: FilterMapping;
 }
 
 interface PaginationMapping {
@@ -95,6 +97,16 @@ interface SortMapping {
   // 新增：排序字段/方向的参数名
   fieldKey?: string; // 如：sortBy
   directionKey?: string; // 如：sortDirection
+}
+
+// 新增：筛选映射配置
+interface FilterMapping {
+  mode?: 'noco' | 'api'; // 筛选模式
+  location: 'params' | 'body'; // 参数写入位置
+  parseSource?: string; // 解析变量来源（内置变量名）
+  transformMode?: 'simple' | 'complex'; // 转换结构模式
+  opFieldKey?: string; // 操作符字段名（如 op）
+  opValueMappings: Array<{ key: string; apiValue: string; builtinOp?: string }>; // API 操作符值 与 内置操作符 的映射
 }
 
 interface Variable {
@@ -146,6 +158,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   const [sortConfig, setSortConfig] = useState<SortConfig>({ asc: '', desc: '' });
   // 新增：排序映射 state
   const [sortMapping, setSortMapping] = useState<SortMapping>({ mode: 'noco', location: 'params', fieldKey: '', directionKey: '' });
+  // 新增：筛选映射 state
+  const [filterMapping, setFilterMapping] = useState<FilterMapping>({ mode: 'noco', location: 'params', parseSource: '', transformMode: 'simple', opFieldKey: 'op', opValueMappings: [] });
   const [paginationMapping, setPaginationMapping] = useState<PaginationMapping>({
     currentPage: 'page',
     pageSize: 'pageSize',
@@ -196,6 +210,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       // 新增：初始化排序配置
       if (initialConfig.sort) setSortConfig(initialConfig.sort);
       if (initialConfig.sortMapping) setSortMapping(initialConfig.sortMapping);
+      // 新增：初始化筛选配置
+      if (initialConfig.filterMapping) setFilterMapping(initialConfig.filterMapping);
       // 标记：下一次状态稳定后自动运行一次
       setShouldAutoRun(true);
       setHasAppliedInitialConfig(true);
@@ -222,7 +238,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
     const pagination = currentPagination || { current: 1, pageSize: 10, total: 0, totalPages: 0 };
     const totalPages = pagination.totalPages || Math.ceil((pagination.total || 0) / (pagination.pageSize || 1));
 
-    return [
+    const vars: Variable[] = [
       {
         key: 'builtin-current-page',
         name: 'currentPage',
@@ -260,6 +276,115 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         isBuiltIn: true,
       },
     ];
+
+    // 新增：内置筛选相关变量
+    const defaultOps = [
+      'equals',
+      'not_equals',
+      'contains',
+      'starts_with',
+      'ends_with',
+      'gt',
+      'gte',
+      'lt',
+      'lte',
+      'empty',
+      'not_empty',
+    ];
+    vars.push(
+      {
+        key: 'builtin-filter',
+        name: 'filter',
+        value: '{}', // 预留：由 Filter 配置/右侧 UI 生成
+        type: 'object',
+        source: 'Filter Config',
+        scope: 'NocoBase Request',
+        isBuiltIn: true,
+      },
+      {
+        key: 'builtin-filter-operators',
+        name: 'filterOperators',
+        value: JSON.stringify(defaultOps),
+        type: 'object',
+        source: 'Filter Config',
+        scope: 'NocoBase Request',
+        isBuiltIn: true,
+      }
+    );
+
+    return vars;
+  };
+
+  // 新增：获取内置的筛选操作符列表（来自变量 filterOperators）
+  const getFilterOperators = (): Array<{ label: string; value: string }> => {
+    try {
+      const vars = getBuiltInVariables();
+      const v = vars.find(x => x.name === 'filterOperators');
+      if (v && typeof v.value === 'string') {
+        const parsed = JSON.parse(v.value);
+        if (Array.isArray(parsed)) {
+          return parsed.map((op: any) => ({ label: String(op), value: String(op) }));
+        }
+      }
+    } catch (_) {}
+    // 回退：默认操作符
+    return [
+      'equals', 'not_equals', 'contains', 'starts_with', 'ends_with', 'gt', 'gte', 'lt', 'lte', 'empty', 'not_empty'
+    ].map(op => ({ label: op, value: op }));
+  };
+
+  // 新增：根据变量名查找变量值（含内置与自定义），并尽量解析为对象
+  const findVariableValueByName = (name?: string): any => {
+    const targetName = (name && name.trim()) ? name.trim() : 'filter';
+    const all = [...getBuiltInVariables(), ...variables];
+    const v = all.find(x => x.name === targetName);
+    if (!v) return undefined;
+    try {
+      // 若是字符串且为 JSON，则解析
+      if (typeof v.value === 'string') {
+        const s = v.value.trim();
+        if ((s.startsWith('{') && s.endsWith('}')) || (s.startsWith('[') && s.endsWith(']'))) {
+          return JSON.parse(s);
+        }
+        return v.value;
+      }
+      return v.value as any;
+    } catch {
+      return v.value as any;
+    }
+  };
+
+  // 新增：构建 builtin -> api 操作符映射表
+  const buildBuiltinToApiOpMap = (): Record<string, string> => {
+    const map: Record<string, string> = {};
+    (filterMapping.opValueMappings || []).forEach(m => {
+      const builtin = (m.builtinOp || '').trim();
+      const api = (m.apiValue || '').trim();
+      if (builtin && api) map[builtin] = api;
+    });
+    return map;
+  };
+
+  // 新增：深度转换筛选对象中的操作符字段（支持 op/operator/opFieldKey）
+  const transformFilterOperatorsDeep = (input: any, opFieldKey: string, builtin2api: Record<string, string>): any => {
+    if (Array.isArray(input)) return input.map(i => transformFilterOperatorsDeep(i, opFieldKey, builtin2api));
+    if (input && typeof input === 'object') {
+      const out: any = Array.isArray(input) ? [] : {};
+      const existingKeys = Object.keys(input);
+      for (const k of existingKeys) {
+        const val = (input as any)[k];
+        const lower = k.toLowerCase();
+        if (lower === 'op' || lower === 'operator' || k === opFieldKey) {
+          const raw = String(val);
+          const mapped = builtin2api[raw] || raw;
+          out[opFieldKey] = mapped;
+        } else {
+          out[k] = transformFilterOperatorsDeep(val, opFieldKey, builtin2api);
+        }
+      }
+      return out;
+    }
+    return input;
   };
 
   // 内部方法：根据映射获取字段值（来自内置变量）
@@ -409,6 +534,27 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
   // 新增：更新排序映射配置
   const updateSortMapping = (field: keyof SortMapping, value: any) => {
     setSortMapping(prev => ({ ...prev, [field]: value }));
+  };
+
+  // 新增：更新筛选映射配置
+  const updateFilterMapping = (field: keyof FilterMapping, value: any) => {
+    setFilterMapping((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const addOpMappingRow = () => {
+    setFilterMapping((prev) => ({ ...prev, opValueMappings: [...(prev.opValueMappings || []), { key: Date.now().toString(), apiValue: '', builtinOp: undefined }] }));
+  };
+  const updateOpMappingRow = (rowKey: string, patch: Partial<{ apiValue: string; builtinOp?: string }>) => {
+    setFilterMapping((prev) => ({
+      ...prev,
+      opValueMappings: (prev.opValueMappings || []).map(r => r.key === rowKey ? { ...r, ...patch } : r)
+    }));
+  };
+  const removeOpMappingRow = (rowKey: string) => {
+    setFilterMapping((prev) => ({
+      ...prev,
+      opValueMappings: (prev.opValueMappings || []).filter(r => r.key !== rowKey)
+    }));
   };
 
   // 新增：根据当前 sorter 更新 params/body
@@ -568,6 +714,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       paginationMapping,
       sort: sortConfig,
       sortMapping,
+      filterMapping,
     }),
     // 新增：设置配置（便于外部注入模板）
     setConfig: (cfg: Partial<RequestPanelConfig>) => {
@@ -582,6 +729,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
       // 新增：设置排序配置
       if (cfg.sort) setSortConfig(cfg.sort);
       if (cfg.sortMapping) setSortMapping(cfg.sortMapping);
+      // 新增：设置筛选配置
+      if (cfg.filterMapping) setFilterMapping(cfg.filterMapping);
     }
   }));
 
@@ -762,6 +911,26 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         // Noco 排序：不往 params 写入（这里不强制清理历史，避免误删用户手填参数）
       }
 
+      // 新增：当启用 API 条件过滤时注入筛选
+      const filterModeIsApi = (filterMapping.mode || 'noco') === 'api';
+      if (filterModeIsApi) {
+        const sourceName = (filterMapping.parseSource && filterMapping.parseSource.trim()) || 'filter';
+        const rawVal = findVariableValueByName(sourceName);
+        if (rawVal !== undefined && rawVal !== null && sourceName) {
+          // 尝试转换
+          const opKey = (filterMapping.opFieldKey || 'op').trim();
+          const map = buildBuiltinToApiOpMap();
+          const transformed = (filterMapping.transformMode || 'complex') === 'complex'
+            ? transformFilterOperatorsDeep(rawVal, opKey, map)
+            : rawVal;
+
+          if (filterMapping.location === 'params') {
+            // params 中以字符串形式传递，避免变成 filter[field]=xxx 的展开
+            (effectiveParams as any)['filter'] = typeof transformed === 'string' ? transformed : JSON.stringify(transformed);
+          }
+        }
+      }
+
       config.params = effectiveParams;
 
       // 添加请求体（如果不是 GET 方法）
@@ -796,6 +965,20 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
               }
             }
 
+            // 新增：当筛选写入 body 且选择 API 条件过滤时，注入筛选
+            if ((filterMapping.mode || 'noco') === 'api' && filterMapping.location === 'body') {
+              const sourceName = (filterMapping.parseSource && filterMapping.parseSource.trim()) || 'filter';
+              const rawVal = findVariableValueByName(sourceName);
+              if (rawVal !== undefined && rawVal !== null && sourceName) {
+                const opKey = (filterMapping.opFieldKey || 'op').trim();
+                const map = buildBuiltinToApiOpMap();
+                const transformed = (filterMapping.transformMode || 'simple') === 'complex'
+                  ? transformFilterOperatorsDeep(rawVal, opKey, map)
+                  : rawVal;
+                (bodyObj as any)['filter'] = transformed;
+              }
+            }
+
             config.data = bodyObj;
             config.headers['Content-Type'] = 'application/json';
           } catch (e) {
@@ -824,6 +1007,19 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
           if (fieldKey) minimalBody[fieldKey] = currentSorter.field;
           if (directionKey) minimalBody[directionKey] = dirVal;
           if (!fieldKey && !directionKey && currentSorter.field) minimalBody[currentSorter.field] = dirVal;
+        }
+        // 新增：当筛选写入 body 且选择 API 条件过滤时，注入筛选
+        if ((filterMapping.mode || 'noco') === 'api' && filterMapping.location === 'body') {
+          const sourceName = (filterMapping.parseSource && filterMapping.parseSource.trim()) || 'filter';
+          const rawVal = findVariableValueByName(sourceName);
+          if (rawVal !== undefined && rawVal !== null && sourceName) {
+            const opKey = (filterMapping.opFieldKey || 'op').trim();
+            const map = buildBuiltinToApiOpMap();
+            const transformed = (filterMapping.transformMode || 'simple') === 'complex'
+              ? transformFilterOperatorsDeep(rawVal, opKey, map)
+              : rawVal;
+            (minimalBody as any)['filter'] = transformed;
+          }
         }
         if (Object.keys(minimalBody).length > 0) {
           config.data = minimalBody;
@@ -1084,6 +1280,140 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
               Leave empty to use the full response data for UI display
             </Text>
           </div>
+        </div>
+      ),
+    },
+    {
+      key: 'filter',
+      label: 'Filter',
+      children: (
+        <div>
+          {/* 筛选模式 */}
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>筛选模式:</Text>
+            <Select
+              size="small"
+              style={{ width: 220, marginLeft: 8 }}
+              value={filterMapping.mode || 'noco'}
+              onChange={(v) => updateFilterMapping('mode', v)}
+              options={[
+                { label: '使用 NocoBase 条件过滤', value: 'noco' },
+                { label: '使用 API 条件过滤', value: 'api' },
+              ]}
+            />
+          </div>
+
+          {(filterMapping.mode || 'noco') === 'api' ? (
+            <>
+              <div style={{ marginBottom: 12 }}>
+                <Text strong>参数写入位置:</Text>
+                <Select
+                  size="small"
+                  style={{ width: 160, marginLeft: 8 }}
+                  value={filterMapping.location}
+                  onChange={(v) => updateFilterMapping('location', v)}
+                  options={[{ label: 'Query Params', value: 'params' }, { label: 'Request Body', value: 'body' }]}
+                />
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <Text strong>解析变量:</Text>
+                <Select
+                  size="small"
+                  style={{ width: 260, marginLeft: 8 }}
+                  placeholder="请选择内置变量（稍后补充）"
+                  value={filterMapping.parseSource}
+                  onChange={(v) => updateFilterMapping('parseSource', v)}
+                  options={getBuiltInVariables().map(v => ({ label: v.name, value: v.name }))}
+                  showSearch
+                />
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <Text strong>定义转换结构:</Text>
+                <Select
+                  size="small"
+                  style={{ width: 260, marginLeft: 8 }}
+                  value={filterMapping.transformMode || 'simple'}
+                  onChange={(v) => updateFilterMapping('transformMode', v)}
+                  options={[
+                    { label: '平铺', value: 'simple' },
+                    { label: '自定义', value: 'complex' },
+                  ]}
+                />
+              </div>
+
+              {(filterMapping.transformMode || 'simple') === 'complex' && (
+                <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, padding: 12 }}>
+                  <Row gutter={8} style={{ marginBottom: 8 }}>
+                    <Col span={12}>
+                      <Text strong>操作符字段名</Text>
+                      <Input
+                        size="small"
+                        placeholder="如：op"
+                        style={{ marginTop: 6 }}
+                        value={filterMapping.opFieldKey}
+                        onChange={(e) => updateFilterMapping('opFieldKey', e.target.value)}
+                      />
+                    </Col>
+                  </Row>
+                  <Table
+                    size="small"
+                    pagination={false}
+                    rowKey={(r: any) => r.key}
+                    columns={[
+                      {
+                        title: 'API 操作符值',
+                        dataIndex: 'apiValue',
+                        render: (_: any, record: any) => (
+                          <Input
+                            size="small"
+                            placeholder="如：eq、contains"
+                            value={record.apiValue}
+                            onChange={(e) => updateOpMappingRow(record.key, { apiValue: e.target.value })}
+                          />
+                        ),
+                      },
+                      {
+                        title: '绑定内置操作符',
+                        dataIndex: 'builtinOp',
+                        render: (_: any, record: any) => (
+                          <Select
+                            size="small"
+                            style={{ width: '100%' }}
+                            placeholder="请选择（稍后补充内置操作符）"
+                            value={record.builtinOp}
+                            onChange={(v) => updateOpMappingRow(record.key, { builtinOp: v })}
+                            options={getFilterOperators()}
+                          />
+                        ),
+                      },
+                      {
+                        title: '',
+                        width: 50,
+                        render: (record: any) => (
+                          <Button type="text" size="small" onClick={() => removeOpMappingRow(record.key)}>Delete</Button>
+                        )
+                      }
+                    ]}
+                    dataSource={filterMapping.opValueMappings || []}
+                  />
+                  <Button type="dashed" style={{ marginTop: 8 }} size="small" onClick={addOpMappingRow}>+ Add Operator Mapping</Button>
+
+                  <div style={{ marginTop: 12, color: '#888', fontSize: 12 }}>
+                    示例（自定义结构）：
+                    <pre style={{ whiteSpace: 'pre-wrap', background: '#fafafa', padding: 8, borderRadius: 4, border: '1px solid #f0f0f0' }}>
+{`query={"$and":[{"field":"a","${filterMapping.opFieldKey || 'op'}":"eq","value":1},{"field":"b","${filterMapping.opFieldKey || 'op'}":"contains","value":2}]}`}
+                    </pre>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div style={{ background: '#fffbe6', padding: 12, border: '1px solid #ffe58f', borderRadius: 4 }}>
+              <Text>已启用「使用 NocoBase 条件过滤」：不向请求写入筛选参数，过滤逻辑由前端或 NocoBase 统一处理。</Text>
+            </div>
+          )}
         </div>
       ),
     },
