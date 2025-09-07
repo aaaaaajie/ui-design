@@ -12,7 +12,7 @@ export function safeToDisplay(value: any): React.ReactNode {
   // @ts-ignore
   if (React.isValidElement && React.isValidElement(value)) return value;
   const t = typeof value;
-  if (t === 'object') {
+  if (t === 'object' && value !== null) {
     try {
       return JSON.stringify(value);
     } catch {
@@ -49,9 +49,9 @@ const compareValues = (a: any, b: any): number => {
 export function normalizeToArray(data: any): any[] {
   if (Array.isArray(data))
     return data.map((it, idx) =>
-      typeof it === 'object' && it !== null ? { key: idx, ...it } : { key: idx, value: it }
+      (it !== null && typeof it === 'object') ? { key: idx, ...it } : { key: idx, value: it }
     );
-  if (data && typeof data === 'object') return [{ key: 0, ...data }];
+  if (data !== null && typeof data === 'object') return [{ key: 0, ...data }];
   return [{ key: 0, value: data }];
 }
 
@@ -71,7 +71,7 @@ export function generateTableColumns(rows: any[], enableSorter: boolean = true):
       : { sorter: (a: any, b: any) => { void a; void b; return 0; } }),
     render: (val: any) => {
       const titleStr =
-        typeof val === 'object'
+        (val !== null && typeof val === 'object')
           ? (() => {
               try {
                 return JSON.stringify(val);
@@ -93,7 +93,7 @@ const getValueForSelectedPath = (row: any, fullPath: string) => {
   const childPath = segments.slice(-1).join('.');
   const base = getNestedValue(row, basePath);
   if (Array.isArray(base)) {
-    const first = base[0];
+    const first = base.find((x: any) => x !== null && typeof x === 'object');
     if (first && typeof first === 'object') return getNestedValue(first, childPath);
     try {
       return JSON.stringify(base);
@@ -101,7 +101,7 @@ const getValueForSelectedPath = (row: any, fullPath: string) => {
       return String(base);
     }
   }
-  if (base && typeof base === 'object') return getNestedValue(base, childPath);
+  if (base !== null && typeof base === 'object') return getNestedValue(base, childPath);
   return undefined;
 };
 
@@ -131,7 +131,7 @@ export function generateSelectedColumns(paths: string[], aliasMap?: Record<strin
         } else {
           const base = getNestedValue(row, basePath);
           if (Array.isArray(base)) {
-            const first = base[0];
+            const first = base.find((x: any) => x !== null && typeof x === 'object');
             if (first && typeof first === 'object') {
               val = getNestedValue(first, childPath);
             } else {
@@ -141,14 +141,14 @@ export function generateSelectedColumns(paths: string[], aliasMap?: Record<strin
                 val = String(base);
               }
             }
-          } else if (base && typeof base === 'object') {
+          } else if (base !== null && typeof base === 'object') {
             val = getNestedValue(base, childPath);
           } else {
             val = undefined;
           }
         }
         const titleStr =
-          typeof val === 'object'
+          (val !== null && typeof val === 'object')
             ? (() => {
                 try {
                   return JSON.stringify(val);
@@ -178,26 +178,26 @@ export const toNumber = (val: any, fallback: number): number => {
 
 export const getRootFields = (data: any): string[] => {
   if (!data) return [];
-  const sample = Array.isArray(data) ? data[0] : data;
-  if (sample && typeof sample === 'object' && !Array.isArray(sample)) return Object.keys(sample);
+  const sample = Array.isArray(data) ? data.find((x: any) => x !== null && typeof x === 'object' && !Array.isArray(x)) : data;
+  if (sample !== null && typeof sample === 'object' && !Array.isArray(sample)) return Object.keys(sample);
   return [];
 };
 
 export const getChildFields = (val: any): string[] => {
   if (!val) return [];
   if (Array.isArray(val)) {
-    const first = val[0];
+    const first = val.find((x: any) => x !== null && typeof x === 'object' && !Array.isArray(x));
     if (first && typeof first === 'object' && !Array.isArray(first)) return Object.keys(first);
     return [];
   }
-  if (typeof val === 'object') return Object.keys(val);
+  if (val !== null && typeof val === 'object') return Object.keys(val);
   return [];
 };
 
 export const getProjectedChildValue = (item: any, basePath: string, childKey: string) => {
   const sub = getNestedValue(item, basePath);
   if (Array.isArray(sub)) {
-    const first = sub[0];
+    const first = sub.find((x: any) => x !== null && typeof x === 'object');
     if (first && typeof first === 'object') return first?.[childKey];
     try {
       return JSON.stringify(sub);
@@ -205,7 +205,7 @@ export const getProjectedChildValue = (item: any, basePath: string, childKey: st
       return String(sub);
     }
   }
-  if (sub && typeof sub === 'object') return sub?.[childKey];
+  if (sub !== null && typeof sub === 'object') return sub?.[childKey];
   return undefined;
 };
 
@@ -222,9 +222,9 @@ export const projectSelected = (data: any, rootSel: string[], childSel: string[]
   };
 
   if (Array.isArray(data)) {
-    return data.map((item, idx) => (item && typeof item === 'object' ? makeRow(item, idx) : { key: idx }));
+    return data.map((item, idx) => (item !== null && typeof item === 'object' ? makeRow(item, idx) : { key: idx }));
   }
-  if (data && typeof data === 'object') {
+  if (data !== null && typeof data === 'object') {
     return [makeRow(data, 0)];
   }
   return [];

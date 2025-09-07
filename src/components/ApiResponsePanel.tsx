@@ -15,12 +15,17 @@ const generateSchema = (
 ): Array<{ key: string; field: string; type: string; value: any; path: string }> => {
   const schema: Array<{ key: string; field: string; type: string; value: any; path: string }> = [];
 
-  if (!data || typeof data !== 'object') return schema;
+  // 工具：判定“真正的对象”（排除 null 与数组）
+  const isRealObject = (v: any) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const typeOf = (v: any): string => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
+
+  if (!data) return schema;
 
   const processObject = (obj: any, currentPrefix: string) => {
+    if (!isRealObject(obj)) return;
     Object.entries(obj).forEach(([key, value], index) => {
       const path = currentPrefix ? `${currentPrefix}.${key}` : key;
-      const fieldType = Array.isArray(value) ? 'array' : typeof value;
+      const fieldType = typeOf(value);
 
       schema.push({
         key: `${currentPrefix}-${key}-${index}`,
@@ -33,8 +38,10 @@ const generateSchema = (
   };
 
   if (Array.isArray(data) && data.length > 0) {
-    processObject(data[0], prefix);
-  } else {
+    // 仅在数组中找到首个“真正的对象”时再展开其字段
+    const firstObj = data.find((it: any) => isRealObject(it));
+    if (firstObj) processObject(firstObj, prefix);
+  } else if (isRealObject(data)) {
     processObject(data, prefix);
   }
 

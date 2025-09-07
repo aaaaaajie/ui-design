@@ -1,8 +1,6 @@
 import React from 'react';
-import { Table, Tag, Typography, Checkbox, Input } from 'antd';
+import { Table, Tag, Checkbox, Input } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-
-const { Text } = Typography;
 
 export interface SchemaRow {
   key: string;
@@ -32,6 +30,7 @@ export default function SchemaTable({
 }) {
   // 构造树形数据：顶层 schema 行 + 子属性行
   const treeData = React.useMemo(() => {
+    const isRealObject = (v: any) => v !== null && typeof v === 'object' && !Array.isArray(v);
     return schema.map((rec) => {
       if (rec.type !== 'array' && rec.type !== 'object') return rec;
       let childEntries: SchemaRow[] = [];
@@ -46,12 +45,12 @@ export default function SchemaTable({
           }
           return rec.value;
         })();
-        const sample = Array.isArray(parsed) ? parsed[0] : parsed;
-        if (sample && typeof sample === 'object' && !Array.isArray(sample)) {
+        const sample = Array.isArray(parsed) ? parsed.find((x: any) => isRealObject(x)) : parsed;
+        if (isRealObject(sample)) {
           childEntries = Object.entries(sample).map(([k, v], i) => ({
             key: `${rec.path}.${k}-${i}`,
             field: k,
-            type: Array.isArray(v) ? 'array' : typeof v,
+            type: Array.isArray(v) ? 'array' : (v !== null && typeof v === 'object') ? 'object' : typeof v,
             value: v,
             path: `${rec.path}.${k}`,
           }));

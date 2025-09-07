@@ -6,18 +6,21 @@ const inferFieldsFromResponse = (resp: any): Array<{ key: string; name: string; 
   const data = resp?.transformedData ?? resp?.data;
   if (!data) return [];
   const fields: Array<{ key: string; name: string; type: string }> = [];
+  const typeOf = (v: any): string => (v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v);
   const pushFromObj = (obj: any) => {
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
     Object.entries(obj).forEach(([k, v], idx) => {
-      const type = Array.isArray(v) ? 'array' : typeof v;
-      fields.push({ key: `${k}-${idx}`, name: k, type: type });
+      const type = typeOf(v);
+      fields.push({ key: `${k}-${idx}`, name: k, type });
     });
   };
-  if (Array.isArray(data) && data.length > 0 && typeof data[0] === 'object') {
-    pushFromObj(data[0]);
-  } else if (typeof data === 'object') {
+  if (Array.isArray(data) && data.length > 0) {
+    const firstObj = data.find((it: any) => it !== null && typeof it === 'object' && !Array.isArray(it));
+    if (firstObj) pushFromObj(firstObj);
+  } else if (data !== null && typeof data === 'object') {
     pushFromObj(data);
   } else {
-    fields.push({ key: 'value', name: 'value', type: typeof data });
+    fields.push({ key: 'value', name: 'value', type: typeOf(data) });
   }
   return fields;
 };

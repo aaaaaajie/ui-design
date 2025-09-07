@@ -142,17 +142,17 @@ interface ApiRequestPanelProps {
 
 const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onPaginationChange, onVariableCreate, currentPagination, currentSorter, initialConfig }, ref) => {
   const [method, setMethod] = useState<string>('GET');
-  const [url, setUrl] = useState<string>('http://localhost:3005/api/users');
+  const [url, setUrl] = useState<string>('https://scrm.xiaoshouyi.com/rest/bff/v3.0/neoui/table/search');
   const [headers, setHeaders] = useState<Header[]>([
-    { key: '1', name: '', value: '', enabled: true }
+    { key: 'cookie', name: 'cookie', value: 'sajssdk_2015_cross_new_user=1; sensorsdata2015jssdkcross=%7B%22distinct_id%22%3A%2219923c712981c5-02242b8b69b3722-16525636-1484784-19923c71299c4e%22%2C%22first_id%22%3A%22%22%2C%22props%22%3A%7B%22%24latest_traffic_source_type%22%3A%22%E7%9B%B4%E6%8E%A5%E6%B5%81%E9%87%8F%22%2C%22%24latest_search_keyword%22%3A%22%E6%9C%AA%E5%8F%96%E5%88%B0%E5%80%BC_%E7%9B%B4%E6%8E%A5%E6%89%93%E5%BC%80%22%2C%22%24latest_referrer%22%3A%22%22%7D%2C%22identities%22%3A%22eyIkaWRlbnRpdHlfY29va2llX2lkIjoiMTk5MjNjNzEyOTgxYzUtMDIyNDJiOGI2OWIzNzIyLTE2NTI1NjM2LTE0ODQ3ODQtMTk5MjNjNzEyOTljNGUifQ%3D%3D%22%2C%22history_login_id%22%3A%7B%22name%22%3A%22%22%2C%22value%22%3A%22%22%7D%2C%22%24device_id%22%3A%2219923c712981c5-02242b8b69b3722-16525636-1484784-19923c71299c4e%22%7D; Hm_lvt_d21b6cdc9793badd374febecaf294d65=1757241882; HMACCOUNT=3AD837F82FD791C5; Hm_lpvt_d21b6cdc9793badd374febecaf294d65=1757241929; _uetsid=a8781f908bd711f09c620551881265d9|1hu15ew|2|fz4|0|2076; _uetvid=a87843408bd711f0b869c127ff24b508|hmb9un|1757241930067|3|1|bat.bing.com/p/insights/c/l; v2304LoginState=true; Hm_lvt_0ad14a255da043b57b58765e4e703498=1757242024; _jzqa=1.1637154991029309400.1757242024.1757242024.1757242024.1; _jzqc=1; _jzqx=1.1757242024.1757242024.1.jzqsr=login%2Exiaoshouyi%2Ecom|jzqct=/.-; _jzqckmp=1; _qzjc=1; gdxidpyhxdE=NlzuNRloEWpYTN7RnI30m%2FQCHZHt%2FTkJR%5CUxP5bmTNz%2FzWJKQoMaqB2mgbXnyVJok9UbH%2BVbn7%5Cdx8wM3CNmRdWT%2BM0ESoHfcQ7WSi5mKc4JQjQ8oxzhT1woWemM4QpxsdMZWT%2FEIyEgBWQ8URSV88JAaWPCDTZCU5MnnBaiYl2%2Ftruj%3A1757242932856; x-ienterprise-passport="4Gv8bxvDoHLqEHmpRe9PQenZRRiO2PRlFDQbgXHvfg45EMEEFrVBip0xnR8o2pEiiS2y4KMyloc="; x-ienterprise-tenant=3958981768989403; _qzja=1.1696751103.1757242024346.1757242024346.1757242024346.1757242024346.1757242106396..0.1.2.1; _qzjb=1.1757242024346.2.1.0.0; _qzjto=2.1.1; _jzqb=1.4.10.1757242024.1; Hm_lpvt_0ad14a255da043b57b58765e4e703498=1757242107; _ga=GA1.2.415153879.1757242107; _gid=GA1.2.526528352.1757242107; _ga_9D4K3FSTH8=GS2.2.s1757242107$o1$g0$t1757242107$j60$l0$h0; resDomain=https://scrmrs.ingageapp.com; c-user=3958992559822286; 3958981768989403isNeoWeb=true; creekflowG6Designer=true; introduceNewEditionV2509_3958992559822286=0; JSESSIONID=37295C871C516768517660BC8CF3D66B', enabled: true }
   ]);
   const [queryParams, setQueryParams] = useState<QueryParam[]>([
-    { key: '1', name: '', value: '', enabled: true }
+    { key: 'entityApiKey', name: 'entityApiKey', value: 'product', enabled: true }
   ]);
   const [body, setBody] = useState<string>('');
   const [bodyType, setBodyType] = useState<string>('json');
   const [loading, setLoading] = useState<boolean>(false);
-  const [transformer, setTransformer] = useState<string>('data');
+  const [transformer, setTransformer] = useState<string>('data.records');
   const [variables, setVariables] = useState<Variable[]>([]);
   // 新增：排序配置 state
   const [sortConfig, setSortConfig] = useState<SortConfig>({ asc: '', desc: '' });
@@ -1029,7 +1029,30 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
         }
       }
 
-      const response = await axios(config);
+      const useProxy = true; // 如需直连目标接口，设为 false
+
+      let response;
+      if (useProxy) {
+        // 通过后端代理进行转发
+        const payload = {
+          method: config.method,
+          url: config.url,
+          headers: config.headers,
+          params: config.params,
+          data: config.data,
+        };
+        const proxyRes = await axios.post('http://localhost:7071/proxy/request', payload, { timeout: 30000 });
+        // proxy 返回的结构：{ status, statusText, headers, data }
+        response = {
+          status: proxyRes.data?.status ?? 200,
+          statusText: proxyRes.data?.statusText ?? 'OK',
+          headers: proxyRes.data?.headers ?? {},
+          data: proxyRes.data?.data,
+        } as any;
+      } else {
+        // 直接由浏览器请求
+        response = await axios(config);
+      }
 
       // 应用 transformer 提取数据
       let transformedData = response.data;
