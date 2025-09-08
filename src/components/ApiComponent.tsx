@@ -191,6 +191,14 @@ const App: React.FC = () => {
         // ApiRequestPanel 内部 useEffect 会监听 props.currentSorter 并自动注入参数与触发请求
     };
 
+    // 新增：筛选变化 —— 更新 block.currentFilter
+    const handleFilterChange = (blockId: string, filter: any | null) => {
+        setBlocks(prev => prev.map(b => (
+            b.id === blockId ? { ...b, currentFilter: filter } : b
+        )));
+        // ApiRequestPanel 将接收 currentFilter，并把它映射为 Variables.filter
+    };
+
     const handleRemoveBlock = (blockId: string) => {
         setBlocks(prev => prev.filter(block => block.id !== blockId));
     };
@@ -224,6 +232,9 @@ const App: React.FC = () => {
             // 带入当前 Schema 选择与别名，便于编辑态沿用
             selectedPaths: target.selectedPaths,
             aliasMap: target.aliasMap,
+            // 带入当前排序与筛选
+            currentSorter: target.currentSorter,
+            currentFilter: target.currentFilter,
         };
         setEditDraftBlock(draft);
         setIsEditModalOpen(true);
@@ -261,6 +272,8 @@ const App: React.FC = () => {
                         onSchemaChange={handleSchemaChange}
                         // 新增：排序变化
                         onSorterChange={handleSorterChange}
+                        // 新增：筛选变化
+                        onFilterChange={handleFilterChange}
                     />
                 ))}
 
@@ -316,6 +329,8 @@ const App: React.FC = () => {
                                     initialConfig={editInitialConfig}
                                     // 新增：传递当前排序
                                     currentSorter={editDraftBlock.currentSorter}
+                                    // 新增：传递当前筛选
+                                    currentFilter={editDraftBlock.currentFilter}
                                 />
                                 {editDraftBlock.response && (
                                     <div style={{ marginTop: 24 }}>
@@ -334,6 +349,8 @@ const App: React.FC = () => {
                                             onSchemaChange={(payload) => setEditDraftBlock(prev => prev ? { ...prev, selectedPaths: payload.selectedPaths, aliasMap: payload.aliasMap } : prev)}
                                             // 新增：排序变化上抛
                                             onSorterChange={(s) => setEditDraftBlock(prev => prev ? { ...prev, currentSorter: s } : prev)}
+                                            // 新增：筛选变化上抛
+                                            onFilterChange={(f) => setEditDraftBlock(prev => prev ? { ...prev, currentFilter: f } : prev)}
                                         />
                                     </div>
                                 )}

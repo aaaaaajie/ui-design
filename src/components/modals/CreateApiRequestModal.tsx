@@ -51,6 +51,8 @@ const CreateApiRequestModal: React.FC<Props> = ({
                 currentPagination={draftBlock.currentPagination}
                 // 新增：传递排序状态
                 currentSorter={draftBlock.currentSorter}
+                // 新增：传递筛选状态
+                currentFilter={draftBlock.currentFilter}
               />
 
               {draftBlock.response && (
@@ -71,6 +73,8 @@ const CreateApiRequestModal: React.FC<Props> = ({
                     onSchemaChange={(payload) => setDraftBlock(prev => prev ? { ...prev, selectedPaths: payload.selectedPaths, aliasMap: payload.aliasMap } : prev)}
                     // 新增：排序变化上抛存入草稿
                     onSorterChange={(s) => setDraftBlock(prev => prev ? { ...prev, currentSorter: s } : prev)}
+                    // 新增：筛选变化上抛存入草稿
+                    onFilterChange={(f) => setDraftBlock(prev => prev ? { ...prev, currentFilter: f } : prev)}
                   />
                 </div>
               )}

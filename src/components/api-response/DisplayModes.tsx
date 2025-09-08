@@ -16,6 +16,8 @@ export default function renderByMode(
     onSorterChange?: (sorter: { field?: string; order?: 'ascend' | 'descend' | null }) => void;
     // 新增：排序模式（影响是否启用本地排序）
     sortMode?: 'noco' | 'api';
+    // 新增：筛选变化回调（向外暴露 Noco 风格 filter）
+    onFilterChange?: (filter: any | null) => void;
   }
 ): React.ReactNode {
   const rows = normalizeToArray(rawData);
@@ -56,6 +58,20 @@ export default function renderByMode(
       const updateCondition = (key: string, patch: Partial<{ field?: string; op?: string; value?: string }>) => {
         setConditions((prev) => prev.map((c) => (c.key === key ? { ...c, ...patch } : c)));
       };
+
+      // 工具：将 applied 转为 Noco 风格 filter 对象
+      const toNocoFilter = React.useCallback((appliedVal: typeof applied): any | null => {
+        if (!appliedVal || !appliedVal.conditions || appliedVal.conditions.length === 0) return null;
+        const valid = appliedVal.conditions.filter((c) => c.field && c.op);
+        if (!valid.length) return null;
+        const items = valid.map(({ field, op, value }) => {
+          const base: any = { field, op };
+          if (op !== 'empty' && op !== 'not_empty') base.value = value;
+          return base;
+        });
+        if (appliedVal.matchMode === 'any') return { or: items };
+        return { and: items };
+      }, []);
 
       // 获取行的字段值（支持 a.b 与 a.b.c，数组对象取首个）
       const getCellValue = (row: any, path?: string) => {
@@ -127,7 +143,7 @@ export default function renderByMode(
                 Filter
               </Button>
               {applied && (
-                <Button size="small" style={{ marginLeft: 8 }} onClick={() => setApplied(null)}>
+                <Button size="small" style={{ marginLeft: 8 }} onClick={() => { setApplied(null); options?.onFilterChange?.(null); }}>
                   Reset
                 </Button>
               )}
@@ -187,7 +203,7 @@ export default function renderByMode(
             footer={
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <Button onClick={() => { setConditions([{ key: 'c-0', field: undefined, op: 'contains', value: '' }]); setMatchMode('all'); }}>Reset</Button>
-                <Button type="primary" onClick={() => { setApplied({ matchMode, conditions: conditions.map(({ key, ...rest }) => rest) }); setOpen(false); }}>Submit</Button>
+                <Button type="primary" onClick={() => { const next = { matchMode, conditions: conditions.map(({ key, ...rest }) => rest) }; setApplied(next); options?.onFilterChange?.(toNocoFilter(next)); setOpen(false); }}>Submit</Button>
               </div>
             }
           >

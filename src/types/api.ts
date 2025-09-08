@@ -22,6 +22,8 @@ export interface Block {
   currentPagination?: { current: number; pageSize: number; total: number; totalPages?: number };
   // 新增：当前表格排序（用于 API 排序联动）
   currentSorter?: { field?: string; order?: 'ascend' | 'descend' | null };
+  // 新增：当前表格筛选（Noco 风格 filter 对象），用于 Variables.filter 同步与条件转换
+  currentFilter?: any | null;
   displayOnly?: boolean;
   initialConfig?: Partial<RequestPanelConfig>;
   isPlaceholder?: boolean;

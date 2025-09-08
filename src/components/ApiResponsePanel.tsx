@@ -48,7 +48,7 @@ const generateSchema = (
   return schema;
 };
 
-const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplayUI, onPaginationChange, initialSelectedPaths, initialAliasMap, onSchemaChange, onSorterChange }) => {
+const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplayUI, onPaginationChange, initialSelectedPaths, initialAliasMap, onSchemaChange, onSorterChange, onFilterChange }) => {
   const [pagination, setPagination] = useState({ current: 1, pageSize: 10, total: 0, showSizeChanger: true });
   const [displayMode, setDisplayMode] = useState<'table' | 'detail' | 'form'>('table');
   const [hoveredSchemaKey, setHoveredSchemaKey] = useState<string | null>(null);
@@ -162,6 +162,8 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
         onSorterChange: (s) => {
           onSorterChange?.(s);
         },
+        // 新增：筛选变化回调
+        onFilterChange: (f) => onFilterChange?.(f),
       })
     );
   };
@@ -190,6 +192,8 @@ const ApiResponsePanel: React.FC<ApiResponsePanelProps> = ({ response, onDisplay
         onSorterChange: (s) => {
           onSorterChange?.(s);
         },
+        // 新增：筛选变化回调
+        onFilterChange: (f) => onFilterChange?.(f),
       })
     );
   }, [response, pagination.current, pagination.pageSize, displayMode, selectedPaths, aliasMap]);

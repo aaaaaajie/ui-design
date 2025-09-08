@@ -45,4 +45,6 @@ export interface ApiResponsePanelProps {
   onSchemaChange?: (payload: { selectedPaths: string[]; aliasMap: Record<string, string> }) => void;
   // 新增：排序变化回调（表格列头点击时触发）
   onSorterChange?: (sorter: { field?: string; order?: 'ascend' | 'descend' | null }) => void;
+  // 新增：筛选变化回调（向外暴露 Noco 风格 filter）
+  onFilterChange?: (filter: any | null) => void;
 }

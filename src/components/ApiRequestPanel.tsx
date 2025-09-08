@@ -1492,8 +1492,8 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                   value={filterMapping.conditionMode || 'simple'}
                   onChange={(v) => updateFilterMapping('conditionMode', v as any)}
                   options={[
-                    { label: '简洁模式（直接传 NocoBase filter）', value: 'simple' },
-                    { label: '复合模式（模板 + 变量映射）', value: 'composite' },
+                    { label: '简洁模式', value: 'simple' },
+                    { label: '复合模式', value: 'composite' },
                   ]}
                 />
               </div>
@@ -1509,7 +1509,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                 />
               </div>
 
-              { (filterMapping.conditionMode || 'simple') === 'composite' && (
+              {(filterMapping.conditionMode || 'simple') === 'composite' && (
                 // 第二步：模板与变量映射
                 <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, padding: 12, marginBottom: 12 }}>
                   <Row gutter={8}>
@@ -1533,7 +1533,7 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                             updateFilterMapping('logicModes', Array.from(set) as any);
                           }}
                           style={{ marginRight: 12 }}
-                        >使用 and</Checkbox>
+                        >使用 All</Checkbox>
                         <Checkbox
                           checked={(filterMapping.logicModes || ['and']).includes('or')}
                           onChange={(e) => {
@@ -1541,10 +1541,85 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                             if (e.target.checked) set.add('or'); else set.delete('or');
                             updateFilterMapping('logicModes', Array.from(set) as any);
                           }}
-                        >使用 or</Checkbox>
+                        >使用 Any</Checkbox>
                       </div>
                     </Col>
                   </Row>
+
+                  {/* 操作符变量工作流（保留） */}
+                  <Row align="middle" style={{ marginBottom: 8, marginTop: 12 }}>
+                    <Col flex="auto">
+                      <Text strong>操作符变量</Text>
+                    </Col>
+                    <Col>
+                      <Tooltip title="将 API 的操作符值与内置操作符（如 eq、like、gt）建立映射。保存后会在下方列表中生成一条自定义变量，类型为 operator。转换时优先使用这些变量完成内置 → API 的映射。">
+                        <Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>如何使用？</Text>
+                      </Tooltip>
+                    </Col>
+                  </Row>
+
+                  {!opVarVisible ? (
+                    <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => setOpVarVisible(true)}>
+                      新增操作符变量
+                    </Button>
+                  ) : (
+                    <Space wrap style={{ marginBottom: 12 }}>
+                      <Input
+                        size="small"
+                        style={{ width: 220 }}
+                        placeholder="API 操作符值，如：=、eq、like、$eq"
+                        value={opVarDraft.apiValue}
+                        onChange={(e) => setOpVarDraft({ ...opVarDraft, apiValue: e.target.value })}
+                      />
+                      <Select
+                        size="small"
+                        style={{ width: 180 }}
+                        placeholder="选择内置操作符"
+                        value={opVarDraft.builtinOp}
+                        onChange={(v) => setOpVarDraft({ ...opVarDraft, builtinOp: v })}
+                        options={(getFilterOperators() || []).map(o => ({ label: o.label, value: o.value }))}
+                        showSearch
+                      />
+                      <Space>
+                        <Button
+                          size="small"
+                          type="primary"
+                          onClick={() => {
+                            const apiValue = (opVarDraft.apiValue || '').trim();
+                            const builtin = (opVarDraft.builtinOp || '').trim();
+                            if (!apiValue || !builtin) return;
+                            addVariable({
+                              name: builtin,
+                              value: apiValue,
+                              type: 'operator',
+                              source: 'Filter Operator',
+                              scope: 'NocoBase Request',
+                            });
+                            setOpVarDraft({ apiValue: '', builtinOp: undefined });
+                            setOpVarVisible(false);
+                          }}
+                        >保存</Button>
+                        <Button size="small" onClick={() => { setOpVarDraft({ apiValue: '', builtinOp: undefined }); setOpVarVisible(false); }}>取消</Button>
+                      </Space>
+                    </Space>
+                  )}
+
+                  <Table
+                    style={{ marginTop: 8 }}
+                    size="small"
+                    pagination={false}
+                    dataSource={variables.filter(v => !v.isBuiltIn && v.type === 'operator')}
+                    rowKey="key"
+                    columns={[
+                      { title: 'API 操作符', dataIndex: 'value', width: 200, render: (v: string) => <Text>{v}</Text> },
+                      { title: '内置操作符', dataIndex: 'name', width: 160, render: (v: string) => <Text code>{v}</Text> },
+                      {
+                        title: '', width: 60, render: (record: any) => (
+                          <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => removeVariable(record.key)} />
+                        )
+                      }
+                    ]}
+                  />
 
                   <div style={{ marginTop: 12 }}>
                     <div style={{ marginBottom: 6 }}><Text strong>条件模板</Text></div>
@@ -1567,81 +1642,6 @@ const ApiRequestPanel = forwardRef<any, ApiRequestPanelProps>(({ onResponse, onP
                   </Button>
                   <Text type="secondary" style={{ fontSize: 12 }}>点击后将把当前筛选条件转换为目标 API 所需的 conditions 并注入到 Params/Body。</Text>
                 </Space>
-              </div>
-
-              {/* 操作符变量工作流（保留） */}
-              <div style={{ border: '1px solid #f0f0f0', borderRadius: 4, padding: 12 }}>
-                <Row align="middle" style={{ marginBottom: 8 }}>
-                  <Col flex="auto">
-                    <Text strong>操作符变量（推荐）</Text>
-                  </Col>
-                  <Col>
-                    <Tooltip title="将 API 的操作符值与内置操作符（如 eq、like、gt）建立映射。保存后会在下方列表中生成一条自定义变量，类型为 operator。转换时优先使用这些变量完成内置 → API 的映射。">
-                      <Text type="secondary" style={{ fontSize: 12, cursor: 'help' }}>如何使用？</Text>
-                    </Tooltip>
-                  </Col>
-                </Row>
-
-                {!opVarVisible ? (
-                  <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => setOpVarVisible(true)}>
-                    新增操作符变量
-                  </Button>
-                ) : (
-                  <Space wrap style={{ marginBottom: 12 }}>
-                    <Input
-                      size="small"
-                      style={{ width: 220 }}
-                      placeholder="API 操作符值，如：=、eq、like、$eq"
-                      value={opVarDraft.apiValue}
-                      onChange={(e) => setOpVarDraft({ ...opVarDraft, apiValue: e.target.value })}
-                    />
-                    <Select
-                      size="small"
-                      style={{ width: 180 }}
-                      placeholder="选择内置操作符"
-                      value={opVarDraft.builtinOp}
-                      onChange={(v) => setOpVarDraft({ ...opVarDraft, builtinOp: v })}
-                      options={(getFilterOperators() || []).map(o => ({ label: o.label, value: o.value }))}
-                      showSearch
-                    />
-                    <Space>
-                      <Button
-                        size="small"
-                        type="primary"
-                        onClick={() => {
-                          const apiValue = (opVarDraft.apiValue || '').trim();
-                          const builtin = (opVarDraft.builtinOp || '').trim();
-                          if (!apiValue || !builtin) return;
-                          addVariable({
-                            name: builtin,
-                            value: apiValue,
-                            type: 'operator',
-                            source: 'Filter Operator',
-                            scope: 'NocoBase Request',
-                          });
-                          setOpVarDraft({ apiValue: '', builtinOp: undefined });
-                          setOpVarVisible(false);
-                        }}
-                      >保存</Button>
-                      <Button size="small" onClick={() => { setOpVarDraft({ apiValue: '', builtinOp: undefined }); setOpVarVisible(false); }}>取消</Button>
-                    </Space>
-                  </Space>
-                )}
-
-                <Table
-                  style={{ marginTop: 8 }}
-                  size="small"
-                  pagination={false}
-                  dataSource={variables.filter(v => !v.isBuiltIn && v.type === 'operator')}
-                  rowKey="key"
-                  columns={[
-                    { title: 'API 操作符', dataIndex: 'value', width: 200, render: (v: string) => <Text>{v}</Text> },
-                    { title: '内置操作符', dataIndex: 'name', width: 160, render: (v: string) => <Text code>{v}</Text> },
-                    { title: '', width: 60, render: (record: any) => (
-                      <Button type="text" size="small" icon={<DeleteOutlined />} onClick={() => removeVariable(record.key)} />
-                    )}
-                  ]}
-                />
               </div>
             </>
           ) : (
