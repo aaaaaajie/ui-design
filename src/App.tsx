@@ -6,6 +6,7 @@ import Collections from './pages/Collections';
 import FieldInterface from './pages/FieldInterface';
 import ApiComponent from './components/ApiComponent';
 import './App.css';
+import AdminDashboard from './pages/AdminDashboard';
 
 function App() {
   return (
@@ -16,6 +17,7 @@ function App() {
           <Route path="/collections" element={<Collections />} />
           <Route path="/field-interface" element={<FieldInterface />} />
           <Route path="/api-tester" element={<ApiComponent />} />
+          <Route path="/admin" element={<AdminDashboard />} />
         </Routes>
       </Router>
     </ConfigProvider>

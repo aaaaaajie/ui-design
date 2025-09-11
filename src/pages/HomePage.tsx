@@ -98,6 +98,34 @@ const HomePage: React.FC = () => {
             </Button>
           </div>
         </Card>
+
+        <Card 
+          hoverable
+          style={{ width: '100%' }}
+          cover={
+            <div style={{ 
+              padding: '40px', 
+              textAlign: 'center', 
+              background: 'linear-gradient(135deg, #1c92d2 0%, #f2fcfe 100%)' 
+            }}>
+              <TableOutlined style={{ fontSize: '48px', color: 'white' }} />
+            </div>
+          }
+        >
+          <Card.Meta 
+            title="Admin Dashboard" 
+            description="后台管理界面（数据源、集合、系统设置等）"
+          />
+          <div style={{ marginTop: '16px' }}>
+            <Button 
+              type="primary" 
+              onClick={() => navigate('/admin')}
+              block
+            >
+              进入 管理控制台
+            </Button>
+          </div>
+        </Card>
       </Space>
 
       <div style={{ marginTop: '48px', textAlign: 'center' }}>
